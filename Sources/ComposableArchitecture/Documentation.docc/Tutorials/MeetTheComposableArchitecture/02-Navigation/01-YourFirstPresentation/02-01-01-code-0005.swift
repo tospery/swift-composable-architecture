@@ -1,11 +1,17 @@
-import SwiftUI
-
-struct AddContactView: View {
-  @Bindable var store: StoreOf<AddContactFeature>
-
-  var body: some View {
-    Form {
-      TextField("Name", text: $store.contact.name.sending(\.setName))
+struct AddContactPreviews: PreviewProvider {
+  static var previews: some View {
+    NavigationStack {
+      AddContactView(
+        store: Store(
+          initialState: AddContactFeature.State(
+            contact: Contact(
+              id: UUID(),
+              name: "Blob"
+            )
+          ),
+          reducer: AddContactFeature()
+        )
+      )
     }
   }
 }

@@ -1,15 +1,15 @@
+import Combine
 import ComposableArchitecture
+import SwiftUI
 import UIKit
 
-@Reducer
-struct LazyNavigation {
-  @ObservableState
+struct LazyNavigation: Reducer {
   struct State: Equatable {
     var optionalCounter: Counter.State?
     var isActivityIndicatorHidden = true
   }
 
-  enum Action {
+  enum Action: Equatable {
     case onDisappear
     case optionalCounter(Counter.Action)
     case setNavigation(isActive: Bool)
@@ -46,17 +46,20 @@ struct LazyNavigation {
         return .none
       }
     }
-    .ifLet(\.optionalCounter, action: \.optionalCounter) {
+    .ifLet(\.optionalCounter, action: /Action.optionalCounter) {
       Counter()
     }
   }
 }
 
 class LazyNavigationViewController: UIViewController {
+  var cancellables: [AnyCancellable] = []
   let store: StoreOf<LazyNavigation>
+  let viewStore: ViewStoreOf<LazyNavigation>
 
   init(store: StoreOf<LazyNavigation>) {
     self.store = store
+    self.viewStore = ViewStore(store, observe: { $0 })
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -67,9 +70,9 @@ class LazyNavigationViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
 
-    title = "Load then navigate"
+    self.title = "Load then navigate"
 
-    view.backgroundColor = .systemBackground
+    self.view.backgroundColor = .systemBackground
 
     let button = UIButton(type: .system)
     button.addTarget(self, action: #selector(loadOptionalCounterTapped), for: .touchUpInside)
@@ -83,51 +86,59 @@ class LazyNavigationViewController: UIViewController {
       activityIndicator,
     ])
     rootStackView.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(rootStackView)
+    self.view.addSubview(rootStackView)
 
     NSLayoutConstraint.activate([
-      rootStackView.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
-      rootStackView.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
+      rootStackView.centerXAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.centerXAnchor),
+      rootStackView.centerYAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.centerYAnchor),
     ])
 
-    observe { [weak self] in
-      guard let self else { return }
-      activityIndicator.isHidden = store.isActivityIndicatorHidden
+    self.viewStore.publisher.isActivityIndicatorHidden
+      .assign(to: \.isHidden, on: activityIndicator)
+      .store(in: &self.cancellables)
 
-      if let store = store.scope(state: \.optionalCounter, action: \.optionalCounter) {
-        navigationController?.pushViewController(
-          CounterViewController(store: store), animated: true
-        )
-      } else {
-        navigationController?.popToViewController(self, animated: true)
-      }
-    }
+    self.store
+      .scope(state: \.optionalCounter, action: LazyNavigation.Action.optionalCounter)
+      .ifLet(
+        then: { [weak self] store in
+          self?.navigationController?.pushViewController(
+            CounterViewController(store: store), animated: true)
+        },
+        else: { [weak self] in
+          guard let self = self else { return }
+          _ = self.navigationController?.popToViewController(self, animated: true)
+        }
+      )
+      .store(in: &self.cancellables)
   }
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
 
-    if !isMovingToParent && store.optionalCounter != nil {
-      store.send(.setNavigation(isActive: false))
+    if !self.isMovingToParent {
+      self.viewStore.send(.setNavigation(isActive: false))
     }
   }
 
   @objc private func loadOptionalCounterTapped() {
-    store.send(.setNavigation(isActive: true))
+    self.viewStore.send(.setNavigation(isActive: true))
   }
 
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
-    store.send(.onDisappear)
+    self.viewStore.send(.onDisappear)
   }
 }
 
-#Preview {
-  UINavigationController(
-    rootViewController: LazyNavigationViewController(
-      store: Store(initialState: LazyNavigation.State()) {
-        LazyNavigation()
-      }
+struct LazyNavigationViewController_Previews: PreviewProvider {
+  static var previews: some View {
+    let vc = UINavigationController(
+      rootViewController: LazyNavigationViewController(
+        store: Store(initialState: LazyNavigation.State()) {
+          LazyNavigation()
+        }
+      )
     )
-  )
+    return UIViewRepresented(makeUIView: { _ in vc.view })
+  }
 }

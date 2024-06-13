@@ -2,12 +2,11 @@ import SwiftUI
 
 /// A reducer that updates bindable state when it receives binding actions.
 ///
-/// This reducer should typically be composed into the ``Reducer/body-swift.property`` of your
-/// feature's reducer:
+/// This reducer should typically be composed into the ``Reducer/body-swift.property-8lumc``
+/// of your feature's reducer:
 ///
 /// ```swift
-/// @Reducer
-/// struct Feature {
+/// struct Feature: Reducer {
 ///   struct State {
 ///     @BindingState var isOn = false
 ///     // More properties...
@@ -26,8 +25,8 @@ import SwiftUI
 /// }
 /// ```
 ///
-/// This makes it so that the binding's logic is run before the feature's logic, _i.e._ you will
-/// only see the state after the binding was written. If you want to react to the state _before_ the
+/// This makes it so that the binding's logic is run before the feature's logic, i.e. you will only
+/// see the state after the binding was written. If you want to react to the state _before_ the
 /// binding was written, you can flip the order of the composition:
 ///
 /// ```swift
@@ -54,11 +53,6 @@ where State == ViewAction.State {
   }
 
   @inlinable
-  public init(action toViewAction: CaseKeyPath<Action, ViewAction>) where Action: CasePathable {
-    self.init(internal: { $0[case: toViewAction] })
-  }
-
-  @inlinable
   public init(action toViewAction: @escaping (_ action: Action) -> ViewAction?) {
     self.init(internal: toViewAction)
   }
@@ -70,9 +64,7 @@ where State == ViewAction.State {
 
   @inlinable
   public func reduce(into state: inout State, action: Action) -> Effect<Action> {
-    // NB: Using a closure and not a `\.binding` key path literal to avoid a bug with archives:
-    //     https://github.com/pointfreeco/swift-composable-architecture/pull/2641
-    guard let bindingAction = self.toViewAction(action).flatMap({ $0.binding })
+    guard let bindingAction = self.toViewAction(action).flatMap(/ViewAction.binding)
     else { return .none }
 
     bindingAction.set(&state)

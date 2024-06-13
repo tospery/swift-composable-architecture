@@ -8,21 +8,36 @@ struct RootView: View {
     NavigationView {
       Form {
         Section {
-          FocusView(
-            store: store.scope(state: \.focus, action: \.focus)
-          )
+          self.focusView
         }
       }
     }
   }
+
+  var focusView: AnyView? {
+    if #available(tvOS 14.0, *) {
+      return AnyView(
+        NavigationLink(
+          "Focus",
+          destination: FocusView(
+            store: self.store.scope(state: \.focus, action: Root.Action.focus)
+          )
+        )
+      )
+    } else {
+      return nil
+    }
+  }
 }
 
-#Preview {
-  NavigationStack {
-    RootView(
-      store: Store(initialState: Root.State()) {
-        Root()
-      }
-    )
+struct ContentView_Previews: PreviewProvider {
+  static var previews: some View {
+    NavigationView {
+      RootView(
+        store: Store(initialState: Root.State()) {
+          Root()
+        }
+      )
+    }
   }
 }

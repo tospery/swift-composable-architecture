@@ -1,8 +1,8 @@
 /// A result builder for combining reducers into a single reducer by running each, one after the
 /// other, and merging their effects.
 ///
-/// It is most common to encounter a reducer builder context when conforming a type to ``Reducer``
-/// and implementing its ``Reducer/body-swift.property`` property.
+/// It is most common to encounter a reducer builder context when conforming a type to
+/// ``Reducer`` and implementing its ``Reducer/body-swift.property-8lumc`` property.
 ///
 /// See ``CombineReducers`` for an entry point into a reducer builder context.
 @resultBuilder
@@ -44,14 +44,6 @@ public enum ReducerBuilder<State, Action> {
   public static func buildExpression<R: Reducer>(_ expression: R) -> R
   where R.State == State, R.Action == Action {
     expression
-  }
-
-  @inlinable
-  @_disfavoredOverload
-  public static func buildExpression(
-    _ expression: any Reducer<State, Action>
-  ) -> Reduce<State, Action> {
-    Reduce(expression)
   }
 
   @inlinable

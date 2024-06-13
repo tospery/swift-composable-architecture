@@ -3,41 +3,38 @@ import ComposableArchitecture
 import Dispatch
 import TwoFactorCore
 
-@Reducer
-public struct Login: Sendable {
-  @ObservableState
+public struct Login: Reducer, Sendable {
   public struct State: Equatable {
-    @Presents public var alert: AlertState<Action.Alert>?
-    public var email = ""
+    @PresentationState public var alert: AlertState<AlertAction>?
+    @BindingState public var email = ""
     public var isFormValid = false
     public var isLoginRequestInFlight = false
-    public var password = ""
-    @Presents public var twoFactor: TwoFactor.State?
+    @BindingState public var password = ""
+    @PresentationState public var twoFactor: TwoFactor.State?
 
     public init() {}
   }
 
-  public enum Action: Sendable, ViewAction {
-    case alert(PresentationAction<Alert>)
-    case loginResponse(Result<AuthenticationResponse, Error>)
+  public enum Action: Equatable {
+    case alert(PresentationAction<AlertAction>)
+    case loginResponse(TaskResult<AuthenticationResponse>)
     case twoFactor(PresentationAction<TwoFactor.Action>)
     case view(View)
 
-    public enum Alert: Equatable, Sendable {}
-
-    @CasePathable
-    public enum View: BindableAction, Sendable {
+    public enum View: BindableAction, Equatable {
       case binding(BindingAction<State>)
       case loginButtonTapped
     }
   }
+
+  public enum AlertAction: Equatable, Sendable {}
 
   @Dependency(\.authenticationClient) var authenticationClient
 
   public init() {}
 
   public var body: some Reducer<State, Action> {
-    BindingReducer(action: \.view)
+    BindingReducer(action: /Action.view)
     Reduce { state, action in
       switch action {
       case .alert:
@@ -67,16 +64,18 @@ public struct Login: Sendable {
         return .run { [email = state.email, password = state.password] send in
           await send(
             .loginResponse(
-              Result {
-                try await self.authenticationClient.login(email: email, password: password)
+              await TaskResult {
+                try await self.authenticationClient.login(
+                  .init(email: email, password: password)
+                )
               }
             )
           )
         }
       }
     }
-    .ifLet(\.$alert, action: \.alert)
-    .ifLet(\.$twoFactor, action: \.twoFactor) {
+    .ifLet(\.$alert, action: /Action.alert)
+    .ifLet(\.$twoFactor, action: /Action.twoFactor) {
       TwoFactor()
     }
   }

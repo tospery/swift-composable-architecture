@@ -1,5 +1,5 @@
 import ComposableArchitecture
-import SwiftUI
+@preconcurrency import SwiftUI
 
 enum Filter: LocalizedStringKey, CaseIterable, Hashable {
   case all = "All"
@@ -7,12 +7,10 @@ enum Filter: LocalizedStringKey, CaseIterable, Hashable {
   case completed = "Completed"
 }
 
-@Reducer
-struct Todos {
-  @ObservableState
+struct Todos: Reducer {
   struct State: Equatable {
-    var editMode: EditMode = .inactive
-    var filter: Filter = .all
+    @BindingState var editMode: EditMode = .inactive
+    @BindingState var filter: Filter = .all
     var todos: IdentifiedArrayOf<Todo.State> = []
 
     var filteredTodos: IdentifiedArrayOf<Todo.State> {
@@ -24,14 +22,14 @@ struct Todos {
     }
   }
 
-  enum Action: BindableAction, Sendable {
+  enum Action: BindableAction, Equatable, Sendable {
     case addTodoButtonTapped
     case binding(BindingAction<State>)
     case clearCompletedButtonTapped
     case delete(IndexSet)
     case move(IndexSet, Int)
     case sortCompletedTodos
-    case todos(IdentifiedActionOf<Todo>)
+    case todo(id: Todo.State.ID, action: Todo.Action)
   }
 
   @Dependency(\.continuousClock) var clock
@@ -76,66 +74,82 @@ struct Todos {
 
         state.todos.move(fromOffsets: source, toOffset: destination)
 
-        return .run { send in
+        return .task {
           try await self.clock.sleep(for: .milliseconds(100))
-          await send(.sortCompletedTodos)
+          return .sortCompletedTodos
         }
 
       case .sortCompletedTodos:
         state.todos.sort { $1.isComplete && !$0.isComplete }
         return .none
 
-      case .todos(.element(id: _, action: .binding(\.isComplete))):
+      case .todo(id: _, action: .binding(\.$isComplete)):
         return .run { send in
           try await self.clock.sleep(for: .seconds(1))
           await send(.sortCompletedTodos, animation: .default)
         }
         .cancellable(id: CancelID.todoCompletion, cancelInFlight: true)
 
-      case .todos:
+      case .todo:
         return .none
       }
     }
-    .forEach(\.todos, action: \.todos) {
+    .forEach(\.todos, action: /Action.todo(id:action:)) {
       Todo()
     }
   }
 }
 
 struct AppView: View {
-  @Bindable var store: StoreOf<Todos>
+  let store: StoreOf<Todos>
+
+  struct ViewState: Equatable {
+    @BindingViewState var editMode: EditMode
+    @BindingViewState var filter: Filter
+    let isClearCompletedButtonDisabled: Bool
+
+    init(store: BindingViewStore<Todos.State>) {
+      self._editMode = store.$editMode
+      self._filter = store.$filter
+      self.isClearCompletedButtonDisabled = !store.todos.contains(where: \.isComplete)
+    }
+  }
 
   var body: some View {
-    NavigationStack {
-      VStack(alignment: .leading) {
-        Picker("Filter", selection: $store.filter.animation()) {
-          ForEach(Filter.allCases, id: \.self) { filter in
-            Text(filter.rawValue).tag(filter)
+    WithViewStore(self.store, observe: ViewState.init) { viewStore in
+      NavigationStack {
+        VStack(alignment: .leading) {
+          Picker("Filter", selection: viewStore.$filter.animation()) {
+            ForEach(Filter.allCases, id: \.self) { filter in
+              Text(filter.rawValue).tag(filter)
+            }
           }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal)
+          .pickerStyle(.segmented)
+          .padding(.horizontal)
 
-        List {
-          ForEach(store.scope(state: \.filteredTodos, action: \.todos)) { store in
-            TodoView(store: store)
+          List {
+            ForEachStore(
+              self.store.scope(state: \.filteredTodos, action: Todos.Action.todo(id:action:))
+            ) {
+              TodoView(store: $0)
+            }
+            .onDelete { viewStore.send(.delete($0)) }
+            .onMove { viewStore.send(.move($0, $1)) }
           }
-          .onDelete { store.send(.delete($0)) }
-          .onMove { store.send(.move($0, $1)) }
         }
+        .navigationTitle("Todos")
+        .navigationBarItems(
+          trailing: HStack(spacing: 20) {
+            EditButton()
+            Button("Clear Completed") {
+              viewStore.send(.clearCompletedButtonTapped, animation: .default)
+            }
+            .disabled(viewStore.isClearCompletedButtonDisabled)
+            Button("Add Todo") { viewStore.send(.addTodoButtonTapped, animation: .default) }
+          }
+        )
+        .environment(\.editMode, viewStore.$editMode)
       }
-      .navigationTitle("Todos")
-      .navigationBarItems(
-        trailing: HStack(spacing: 20) {
-          EditButton()
-          Button("Clear Completed") {
-            store.send(.clearCompletedButtonTapped, animation: .default)
-          }
-          .disabled(!store.todos.contains(where: \.isComplete))
-          Button("Add Todo") { store.send(.addTodoButtonTapped, animation: .default) }
-        }
-      )
-      .environment(\.editMode, $store.editMode)
     }
   }
 }
@@ -160,10 +174,12 @@ extension IdentifiedArray where ID == Todo.State.ID, Element == Todo.State {
   ]
 }
 
-#Preview {
-  AppView(
-    store: Store(initialState: Todos.State(todos: .mock)) {
-      Todos()
-    }
-  )
+struct AppView_Previews: PreviewProvider {
+  static var previews: some View {
+    AppView(
+      store: Store(initialState: Todos.State(todos: .mock)) {
+        Todos()
+      }
+    )
+  }
 }

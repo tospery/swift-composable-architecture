@@ -15,30 +15,7 @@ import SwiftUI
 /// > SwiftUI components.
 ///
 /// Read <doc:Bindings> for more information.
-@available(
-  iOS,
-  deprecated: 9999,
-  message:
-    "Deriving bindings directly from stores using '@ObservableState'. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#BindingState"
-)
-@available(
-  macOS,
-  deprecated: 9999,
-  message:
-    "Deriving bindings directly from stores using '@ObservableState'. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#BindingState"
-)
-@available(
-  tvOS,
-  deprecated: 9999,
-  message:
-    "Deriving bindings directly from stores using '@ObservableState'. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#BindingState"
-)
-@available(
-  watchOS,
-  deprecated: 9999,
-  message:
-    "Deriving bindings directly from stores using '@ObservableState'. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#BindingState"
-)
+@dynamicMemberLookup
 @propertyWrapper
 public struct BindingState<Value> {
   /// The underlying value wrapped by the binding state.
@@ -74,6 +51,25 @@ public struct BindingState<Value> {
   public var projectedValue: Self {
     get { self }
     set { self = newValue }
+  }
+
+  /// Returns binding state to the resulting value of a given key path.
+  ///
+  /// - Parameter keyPath: A key path to a specific resulting value.
+  /// - Returns: A new bindable state.
+  @available(
+    *,
+    deprecated,
+    message:
+      """
+      Chaining onto properties of binding state is deprecated. Instead of pattern matching into a deeper property of binding state, use 'Reducer.onChange(of:)' to detect changes to nested properties of binding state. Instead of using 'viewStore.binding(\\.$nested.property)', use dynamic member lookup ('viewStore.$nested.property').
+      """
+  )
+  public subscript<Subject>(
+    dynamicMember keyPath: WritableKeyPath<Value, Subject>
+  ) -> BindingState<Subject> {
+    get { .init(wrappedValue: self.wrappedValue[keyPath: keyPath]) }
+    set { self.wrappedValue[keyPath: keyPath] = newValue.wrappedValue }
   }
 }
 
@@ -137,7 +133,7 @@ extension BindingState: Sendable where Value: Sendable {}
 /// boilerplate typically associated with mutating multiple fields in state.
 ///
 /// Read <doc:Bindings> for more information.
-public struct BindingAction<Root>: CasePathable, Equatable, @unchecked Sendable {
+public struct BindingAction<Root>: Equatable, @unchecked Sendable {
   public let keyPath: PartialKeyPath<Root>
 
   @usableFromInline
@@ -170,33 +166,6 @@ public struct BindingAction<Root>: CasePathable, Equatable, @unchecked Sendable 
 
   public static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.keyPath == rhs.keyPath && lhs.valueIsEqualTo(rhs.value)
-  }
-
-  public static var allCasePaths: AllCasePaths {
-    AllCasePaths()
-  }
-
-  @dynamicMemberLookup
-  public struct AllCasePaths {
-    #if canImport(Perception)
-      public subscript<Value: Equatable>(
-        dynamicMember keyPath: WritableKeyPath<Root, Value>
-      ) -> AnyCasePath<BindingAction, Value> where Root: ObservableState {
-        AnyCasePath(
-          embed: { .set(keyPath, $0) },
-          extract: { $0.keyPath == keyPath ? $0.value.base as? Value : nil }
-        )
-      }
-    #endif
-
-    public subscript<Value: Equatable>(
-      dynamicMember keyPath: WritableKeyPath<Root, BindingState<Value>>
-    ) -> AnyCasePath<BindingAction, Value> {
-      AnyCasePath(
-        embed: { .set(keyPath, $0) },
-        extract: { $0.keyPath == keyPath ? $0.value.base as? Value : nil }
-      )
-    }
   }
 }
 
@@ -273,6 +242,20 @@ extension BindingAction: CustomDumpStringConvertible {
   }
 }
 
+extension BindingAction {
+  @available(*, deprecated, message: "Use 'BindingViewState' instead.")
+  public func pullback<NewRoot>(
+    _ keyPath: WritableKeyPath<NewRoot, Root>
+  ) -> BindingAction<NewRoot> {
+    .init(
+      keyPath: (keyPath as AnyKeyPath).appending(path: self.keyPath) as! PartialKeyPath<NewRoot>,
+      set: { self.set(&$0[keyPath: keyPath]) },
+      value: self.value,
+      valueIsEqualTo: self.valueIsEqualTo
+    )
+  }
+}
+
 /// An action type that exposes a `binding` case that holds a ``BindingAction``.
 ///
 /// Used in conjunction with ``BindingState`` to safely eliminate the boilerplate typically
@@ -287,15 +270,6 @@ public protocol BindableAction {
   ///
   /// - Returns: A binding action.
   static func binding(_ action: BindingAction<State>) -> Self
-
-  /// Extracts a binding action from this action type.
-  var binding: BindingAction<State>? { get }
-}
-
-extension BindableAction {
-  public var binding: BindingAction<State>? {
-    AnyCasePath(unsafe: Self.binding).extract(from: self)
-  }
 }
 
 extension BindableAction {
@@ -326,9 +300,41 @@ extension ViewStore where ViewAction: BindableAction, ViewAction.State == ViewSt
             value: value,
             bindableActionType: ViewAction.self,
             context: .bindingState,
-            isInvalidated: self.store._isInvalidated,
+            isInvalidated: self._isInvalidated,
             fileID: bindingState.fileID,
             line: bindingState.line
+          )
+          let set: @Sendable (inout ViewState) -> Void = {
+            $0[keyPath: keyPath].wrappedValue = value
+            debugger.wasCalled = true
+          }
+        #else
+          let set: @Sendable (inout ViewState) -> Void = {
+            $0[keyPath: keyPath].wrappedValue = value
+          }
+        #endif
+        return .binding(.init(keyPath: keyPath, set: set, value: value))
+      }
+    )
+  }
+
+  @available(*, deprecated, message: "Use 'viewStore.$value' instead.")
+  public func binding<Value: Equatable>(
+    _ keyPath: WritableKeyPath<ViewState, BindingState<Value>>,
+    fileID: StaticString = #fileID,
+    line: UInt = #line
+  ) -> Binding<Value> {
+    self.binding(
+      get: { $0[keyPath: keyPath].wrappedValue },
+      send: { [isInvalidated = self._isInvalidated] value in
+        #if DEBUG
+          let debugger = BindableActionViewStoreDebugger(
+            value: value,
+            bindableActionType: ViewAction.self,
+            context: .viewStore,
+            isInvalidated: isInvalidated,
+            fileID: fileID,
+            line: line
           )
           let set: @Sendable (inout ViewState) -> Void = {
             $0[keyPath: keyPath].wrappedValue = value
@@ -426,12 +432,7 @@ public struct BindingViewStore<State> {
     fileID: StaticString = #fileID,
     line: UInt = #line
   ) where Action.State == State {
-    self.store = store.scope(
-      id: nil,
-      state: ToState(\.self),
-      action: Action.binding,
-      isInvalid: nil
-    )
+    self.store = store.scope(state: { $0 }, action: Action.binding)
     #if DEBUG
       self.bindableActionType = type(of: Action.self)
       self.fileID = fileID
@@ -444,7 +445,7 @@ public struct BindingViewStore<State> {
   }
 
   public var wrappedValue: State {
-    self.store.withState { $0 }
+    self.store.state.value
   }
 
   public var projectedValue: Self {
@@ -505,21 +506,14 @@ extension ViewStore {
     _ store: Store<State, Action>,
     observe toViewState: @escaping (_ state: BindingViewStore<State>) -> ViewState,
     send fromViewAction: @escaping (_ viewAction: ViewAction) -> Action,
-    removeDuplicates isDuplicate: @escaping (_ lhs: ViewState, _ rhs: ViewState) -> Bool
+    removeDuplicates isDuplicate: @escaping (_ lhs: ViewState, _ rhs: ViewState) -> Bool,
+    file: StaticString = #fileID,
+    line: UInt = #line
   ) where ViewAction: BindableAction, ViewAction.State == State {
     self.init(
       store,
       observe: { (_: State) in
-        toViewState(
-          BindingViewStore(
-            store: store.scope(
-              id: nil,
-              state: ToState(\.self),
-              action: fromViewAction,
-              isInvalid: nil
-            )
-          )
-        )
+        toViewState(BindingViewStore(store: store.scope(state: { $0 }, action: fromViewAction)))
       },
       send: fromViewAction,
       removeDuplicates: isDuplicate
@@ -627,16 +621,7 @@ extension WithViewStore where Content: View {
     self.init(
       store,
       observe: { (_: State) in
-        toViewState(
-          BindingViewStore(
-            store: store.scope(
-              id: nil,
-              state: ToState(\.self),
-              action: fromViewAction,
-              isInvalid: nil
-            )
-          )
-        )
+        toViewState(BindingViewStore(store: store.scope(state: { $0 }, action: fromViewAction)))
       },
       send: fromViewAction,
       removeDuplicates: isDuplicate,
@@ -773,24 +758,16 @@ extension WithViewStore where ViewState: Equatable, Content: View {
     }
 
     deinit {
-      // NB: `isInvalidated()` can access store state, which must happen on the main thread.
-      let isInvalidated =
-        Thread.isMainThread
-        ? self.isInvalidated()
-        : DispatchQueue.main.sync(execute: self.isInvalidated)
-
-      guard !isInvalidated else { return }
+      guard !self.isInvalidated() else { return }
       guard self.wasCalled else {
-        var value = ""
-        customDump(self.value, to: &value, maxDepth: 0)
         runtimeWarn(
           """
-          A binding action sent from a store \
+          A binding action sent from a view store \
           \(self.context == .bindingState ? "for binding state defined " : "")at \
           "\(self.fileID):\(self.line)" was not handled. …
 
             Action:
-              \(typeName(self.bindableActionType)).binding(.set(_, \(value)))
+              \(typeName(self.bindableActionType)).binding(.set(_, \(self.value)))
 
           To fix this, invoke "BindingReducer()" from your feature reducer's "body".
           """

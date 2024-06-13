@@ -12,7 +12,6 @@ private enum NavigationIDPathKey: DependencyKey {
   static let testValue = NavigationIDPath()
 }
 
-@usableFromInline
 struct NavigationIDPath: Hashable, Sendable {
   fileprivate var path: [NavigationID]
 
@@ -100,7 +99,7 @@ struct NavigationID: Hashable, @unchecked Sendable {
   init<Value, Root>(
     root: Root,
     value: Value,
-    casePath: AnyCasePath<Root, Value>
+    casePath: CasePath<Root, Value>
   ) {
     self.kind = .casePath(root: Root.self, value: Value.self)
     self.tag = EnumMetadata(Root.self)?.tag(of: root)

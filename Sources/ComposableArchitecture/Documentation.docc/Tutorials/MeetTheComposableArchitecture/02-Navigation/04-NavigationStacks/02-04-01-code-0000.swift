@@ -1,5 +1,4 @@
 import ComposableArchitecture
 
-@Reducer
-struct ContactDetailFeature {
+struct ContactDetailFeature: Reducer {
 }

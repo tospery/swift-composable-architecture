@@ -6,7 +6,7 @@ import OrderedCollections
 /// A list of data representing the content of a navigation stack.
 ///
 /// Use this type for modeling a feature's domain that needs to present child features using
-/// ``Reducer/forEach(_:action:destination:fileID:line:)-yz3v``.
+/// ``Reducer/forEach(_:action:destination:fileID:line:)``.
 ///
 /// See the dedicated article on <doc:Navigation> for more information on the library's navigation
 /// tools, and in particular see <doc:StackBasedNavigation> for information on modeling navigation
@@ -15,7 +15,7 @@ import OrderedCollections
 /// compares to SwiftUI's `NavigationPath` type.
 public struct StackState<Element> {
   var _dictionary: OrderedDictionary<StackElementID, Element>
-  fileprivate var _mounted: OrderedSet<StackElementID> = []
+  fileprivate var _mounted: Set<StackElementID> = []
 
   @Dependency(\.stackElementID) private var stackElementID
 
@@ -38,7 +38,12 @@ public struct StackState<Element> {
   /// Accesses the value associated with the given id for reading and writing.
   public subscript(id id: StackElementID) -> Element? {
     _read { yield self._dictionary[id] }
-    _modify { yield &self._dictionary[id] }
+    _modify {
+      yield &self._dictionary[id]
+      if !self._dictionary.keys.contains(id) {
+        self._mounted.remove(id)
+      }
+    }
     set {
       switch (self.ids.contains(id), newValue, _XCTIsTesting) {
       case (true, _, _), (false, .some, true):
@@ -50,62 +55,16 @@ public struct StackState<Element> {
       case (false, .none, _):
         break
       }
+      if newValue == nil {
+        self._mounted.remove(id)
+      }
     }
   }
 
   /// Accesses the value associated with the given id and case for reading and writing.
   ///
-  /// When using stack-based navigation (see <doc:StackBasedNavigation>) you will typically have a
-  /// single enum that represents all of the destinations that can be pushed onto the stack, and you
-  /// will hold that state in ``StackState``:
-  ///
-  /// ```swift
-  /// struct State {
-  ///   var path = StackState<Path.State>()
-  /// }
-  /// ```
-  ///
-  /// You can use this subscript for a succinct syntax to modify the data in a particular case of
-  /// the `Path.State` enum, like so:
-  ///
-  /// ```swift
-  /// state.path[id: 0, case: \.edit]?.alert = AlertState {
-  ///   Text("Delete?")
-  /// }
-  /// ```
-  ///
-  /// > Important: Accessing the wrong case will result in a runtime warning and test failure.
-  public subscript<Case>(id id: StackElementID, case path: CaseKeyPath<Element, Case>) -> Case?
-  where Element: CasePathable {
-    _read { yield self[id: id, case: AnyCasePath(path)] }
-    _modify { yield &self[id: id, case: AnyCasePath(path)] }
-  }
-
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this subscript with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this subscript with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this subscript with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this subscript with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  public subscript<Case>(id id: StackElementID, case path: AnyCasePath<Element, Case>) -> Case? {
+  /// > Note: Accessing the wrong case will result in a runtime warning.
+  public subscript<Case>(id id: StackElementID, case path: CasePath<Element, Case>) -> Case? {
     _read { yield self[id: id].flatMap(path.extract) }
     _modify {
       let root = self[id: id]
@@ -135,7 +94,7 @@ public struct StackState<Element> {
   ///
   /// - Parameter id: The identifier of an element in the stack.
   public mutating func pop(from id: StackElementID) {
-    guard let index = self.ids.firstIndex(of: id)
+    guard let index = self._dictionary.keys.firstIndex(of: id)
     else { return }
     self.removeSubrange(index...)
   }
@@ -144,7 +103,7 @@ public struct StackState<Element> {
   ///
   /// - Parameter id: The identifier of an element in the stack.
   public mutating func pop(to id: StackElementID) {
-    guard let index = self.ids.firstIndex(of: id)
+    guard let index = self._dictionary.keys.firstIndex(of: id)
     else { return }
     self.removeSubrange(index.advanced(by: 1)...)
   }
@@ -159,11 +118,11 @@ extension StackState: RandomAccessCollection, RangeReplaceableCollection {
   public init() {
     self._dictionary = [:]
   }
-  public mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
-    self._dictionary.removeAll(keepingCapacity: keepCapacity)
-  }
   public mutating func replaceSubrange<C: Collection>(_ subrange: Range<Int>, with newElements: C)
   where C.Element == Element {
+    for id in self.ids[subrange] {
+      self._mounted.remove(id)
+    }
     self._dictionary.removeSubrange(subrange)
     for (offset, element) in zip(subrange.lowerBound..., newElements) {
       self._dictionary.updateValue(element, forKey: self.stackElementID.next(), insertingAt: offset)
@@ -183,7 +142,8 @@ extension StackState: Hashable where Element: Hashable {
   }
 }
 
-extension StackState: Sendable where Element: Sendable {}
+// NB: We can remove `@unchecked` when swift-collections 1.1 is released.
+extension StackState: @unchecked Sendable where Element: Sendable {}
 
 extension StackState: Decodable where Element: Decodable {
   public init(from decoder: Decoder) throws {
@@ -219,12 +179,12 @@ extension StackState: CustomDumpReflectable {
 /// A wrapper type for actions that can be presented in a navigation stack.
 ///
 /// Use this type for modeling a feature's domain that needs to present child features using
-/// ``Reducer/forEach(_:action:destination:fileID:line:)-yz3v``.
+/// ``Reducer/forEach(_:action:destination:fileID:line:)``.
 ///
 /// See the dedicated article on <doc:Navigation> for more information on the library's navigation
 /// tools, and in particular see <doc:StackBasedNavigation> for information on modeling navigation
 /// using ``StackAction`` for navigation stacks.
-public enum StackAction<State, Action>: CasePathable {
+public enum StackAction<State, Action> {
   /// An action sent to the associated stack element at a given identifier.
   indirect case element(id: StackElementID, action: Action)
 
@@ -234,52 +194,6 @@ public enum StackAction<State, Action>: CasePathable {
   /// An action sent to present the given state at a given identifier in a navigation stack. This
   /// action is typically sent from the view via the `NavigationLink(value:)` initializer.
   case push(id: StackElementID, state: State)
-
-  public static var allCasePaths: AllCasePaths {
-    AllCasePaths()
-  }
-
-  public struct AllCasePaths {
-    public var element: AnyCasePath<StackAction, (id: StackElementID, action: Action)> {
-      AnyCasePath(
-        embed: StackAction.element,
-        extract: {
-          guard case let .element(id, action) = $0 else { return nil }
-          return (id: id, action: action)
-        }
-      )
-    }
-
-    public var popFrom: AnyCasePath<StackAction, StackElementID> {
-      AnyCasePath(
-        embed: StackAction.popFrom,
-        extract: {
-          guard case let .popFrom(id) = $0 else { return nil }
-          return id
-        }
-      )
-    }
-
-    public var push: AnyCasePath<StackAction, (id: StackElementID, state: State)> {
-      AnyCasePath(
-        embed: StackAction.push,
-        extract: {
-          guard case let .push(id, state) = $0 else { return nil }
-          return (id: id, state: state)
-        }
-      )
-    }
-
-    public subscript(id id: StackElementID) -> AnyCasePath<StackAction, Action> {
-      AnyCasePath(
-        embed: { .element(id: id, action: $0) },
-        extract: {
-          guard case .element(id, let action) = $0 else { return nil }
-          return action
-        }
-      )
-    }
-  }
 }
 
 extension StackAction: Equatable where State: Equatable, Action: Equatable {}
@@ -298,21 +212,20 @@ extension Reducer {
   /// of each child feature using the `forEach` operator:
   ///
   /// ```swift
-  /// @Reducer
-  /// struct ParentFeature {
+  /// struct ParentFeature: Reducer {
   ///   struct State {
   ///     var path = StackState<Path.State>()
   ///     // ...
   ///   }
   ///   enum Action {
-  ///     case path(StackActionOf<Path>)
+  ///     case path(StackAction<Path.State, Path.Action>)
   ///     // ...
   ///   }
   ///   var body: some ReducerOf<Self> {
   ///     Reduce { state, action in
   ///       // Core parent logic
   ///     }
-  ///     .forEach(\.path, action: \.path) {
+  ///     .forEach(\.path, action: /Action.path) {
   ///       Path()
   ///     }
   ///   }
@@ -350,51 +263,7 @@ extension Reducer {
   @warn_unqualified_access
   public func forEach<DestinationState, DestinationAction, Destination: Reducer>(
     _ toStackState: WritableKeyPath<State, StackState<DestinationState>>,
-    action toStackAction: CaseKeyPath<Action, StackAction<DestinationState, DestinationAction>>,
-    @ReducerBuilder<DestinationState, DestinationAction> destination: () -> Destination,
-    fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) -> _StackReducer<Self, Destination>
-  where Destination.State == DestinationState, Destination.Action == DestinationAction {
-    _StackReducer(
-      base: self,
-      toStackState: toStackState,
-      toStackAction: AnyCasePath(toStackAction),
-      destination: destination(),
-      fileID: fileID,
-      line: line
-    )
-  }
-
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @inlinable
-  @warn_unqualified_access
-  public func forEach<DestinationState, DestinationAction, Destination: Reducer>(
-    _ toStackState: WritableKeyPath<State, StackState<DestinationState>>,
-    action toStackAction: AnyCasePath<Action, StackAction<DestinationState, DestinationAction>>,
+    action toStackAction: CasePath<Action, StackAction<DestinationState, DestinationAction>>,
     @ReducerBuilder<DestinationState, DestinationAction> destination: () -> Destination,
     fileID: StaticString = #fileID,
     line: UInt = #line
@@ -411,25 +280,10 @@ extension Reducer {
   }
 }
 
-/// A convenience type alias for referring to a stack action of a given reducer's domain.
-///
-/// Instead of specifying two generics:
-///
-/// ```swift
-///     case path(StackAction<Path.State, Path.Action>)
-/// ```
-///
-/// You can specify a single generic:
-///
-/// ```swift
-///     case path(StackActionOf<Path>)
-/// ```
-public typealias StackActionOf<R: Reducer> = StackAction<R.State, R.Action>
-
 public struct _StackReducer<Base: Reducer, Destination: Reducer>: Reducer {
   let base: Base
   let toStackState: WritableKeyPath<Base.State, StackState<Destination.State>>
-  let toStackAction: AnyCasePath<Base.Action, StackAction<Destination.State, Destination.Action>>
+  let toStackAction: CasePath<Base.Action, StackAction<Destination.State, Destination.Action>>
   let destination: Destination
   let fileID: StaticString
   let line: UInt
@@ -440,7 +294,7 @@ public struct _StackReducer<Base: Reducer, Destination: Reducer>: Reducer {
   init(
     base: Base,
     toStackState: WritableKeyPath<Base.State, StackState<Destination.State>>,
-    toStackAction: AnyCasePath<Base.Action, StackAction<Destination.State, Destination.Action>>,
+    toStackAction: CasePath<Base.Action, StackAction<Destination.State, Destination.Action>>,
     destination: Destination,
     fileID: StaticString,
     line: UInt
@@ -454,7 +308,7 @@ public struct _StackReducer<Base: Reducer, Destination: Reducer>: Reducer {
   }
 
   public func reduce(into state: inout Base.State, action: Base.Action) -> Effect<Base.Action> {
-    let idsBefore = state[keyPath: self.toStackState]._mounted
+    let idsBefore = state[keyPath: self.toStackState].ids
     let destinationEffects: Effect<Base.Action>
     let baseEffects: Effect<Base.Action>
 
@@ -500,7 +354,7 @@ public struct _StackReducer<Base: Reducer, Destination: Reducer>: Reducer {
           • This action was sent to the store while its state contained no element at this ID. To \
           fix this make sure that actions for this reducer can only be sent from a view store when \
           its state contains an element at this id. In SwiftUI applications, use \
-          "NavigationStack.init(path:)" with a binding to a store.
+          "NavigationStackStore".
           """
         )
         destinationEffects = .none
@@ -571,6 +425,7 @@ public struct _StackReducer<Base: Reducer, Destination: Reducer>: Reducer {
     }
 
     let idsAfter = state[keyPath: self.toStackState].ids
+    let idsMounted = state[keyPath: self.toStackState]._mounted
 
     let cancelEffects: Effect<Base.Action> =
       areOrderedSetsDuplicates(idsBefore, idsAfter)
@@ -581,25 +436,26 @@ public struct _StackReducer<Base: Reducer, Destination: Reducer>: Reducer {
         }
       )
     let presentEffects: Effect<Base.Action> =
-      areOrderedSetsDuplicates(idsBefore, idsAfter)
+      idsAfter.count == idsMounted.count
       ? .none
       : .merge(
-        idsAfter.subtracting(idsBefore).map { elementID in
+        idsAfter.subtracting(idsMounted).map { elementID in
           let navigationDestinationID = self.navigationIDPath(for: elementID)
+          state[keyPath: self.toStackState]._mounted.insert(elementID)
           return .concatenate(
-            .publisher { Empty(completeImmediately: false) }
+            Empty(completeImmediately: false)
+              .eraseToEffectPublisher()
               ._cancellable(
                 id: NavigationDismissID(elementID: elementID),
                 navigationIDPath: navigationDestinationID
               ),
-            .publisher { Just(self.toStackAction.embed(.popFrom(id: elementID))) }
+            Just(self.toStackAction.embed(.popFrom(id: elementID)))
+              .eraseToEffectPublisher()
           )
           ._cancellable(navigationIDPath: navigationDestinationID)
           ._cancellable(id: OnFirstAppearID(), navigationIDPath: .init())
         }
       )
-
-    state[keyPath: self.toStackState]._mounted = idsAfter
 
     return .merge(
       destinationEffects,

@@ -1,11 +1,11 @@
-// swift-tools-version:5.9
+// swift-tools-version:5.7
 
 import PackageDescription
 
 let package = Package(
   name: "tic-tac-toe",
   platforms: [
-    .iOS(.v17)
+    .iOS(.v16)
   ],
   products: [
     .library(name: "AppCore", targets: ["AppCore"]),
@@ -28,7 +28,7 @@ let package = Package(
   ],
   dependencies: [
     .package(name: "swift-composable-architecture", path: "../../.."),
-    .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.0.0"),
+    .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "0.1.0"),
   ],
   targets: [
     .target(
@@ -64,8 +64,7 @@ let package = Package(
     .target(
       name: "AuthenticationClient",
       dependencies: [
-        .product(name: "Dependencies", package: "swift-dependencies"),
-        .product(name: "DependenciesMacros", package: "swift-dependencies"),
+        .product(name: "Dependencies", package: "swift-dependencies")
       ]
     ),
     .target(

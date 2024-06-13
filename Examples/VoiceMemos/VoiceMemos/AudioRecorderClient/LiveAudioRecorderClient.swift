@@ -26,7 +26,11 @@ private actor AudioRecorder {
   }
 
   static func requestPermission() async -> Bool {
-    await AVAudioApplication.requestRecordPermission()
+    await withUnsafeContinuation { continuation in
+      AVAudioSession.sharedInstance().requestRecordPermission { granted in
+        continuation.resume(returning: granted)
+      }
+    }
   }
 
   func stop() {

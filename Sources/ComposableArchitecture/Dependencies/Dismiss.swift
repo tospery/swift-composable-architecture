@@ -15,29 +15,26 @@ extension DependencyValues {
 /// Execute this in the effect returned from a reducer in order to dismiss the feature:
 ///
 /// ```swift
-/// @Reducer
-/// struct ChildFeature {
+/// struct ChildFeature: Reducer {
 ///   struct State { /* ... */ }
 ///   enum Action {
 ///     case exitButtonTapped
 ///     // ...
 ///   }
 ///   @Dependency(\.dismiss) var dismiss
-///   var body: some Reducer<State, Action> {
-///     Reduce { state, action in
-///       switch action {
-///       case .exitButtonTapped:
-///         return .run { _ in await self.dismiss() }
-///       // ...
-///       }
+///   func reduce(into state: inout State, action: Action) -> Effect<Action> {
+///     switch action {
+///     case .exitButtonTapped:
+///       return .fireAndForget { await self.dismiss() }
+///     // ...
 ///     }
 ///   }
 /// }
 /// ```
 ///
 /// This operation works by finding the nearest parent feature that was presented using either the
-/// ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` or the
-/// ``Reducer/forEach(_:action:destination:fileID:line:)-yz3v`` operator, and then dismisses _that_
+/// ``Reducer/ifLet(_:action:destination:fileID:line:)`` or the
+/// ``Reducer/forEach(_:action:destination:fileID:line:)`` operator, and then dismisses _that_
 /// feature. It performs the dismissal by either sending the ``PresentationAction/dismiss`` in the
 /// case of `ifLet` or sending ``StackAction/popFrom(id:)`` in the case of `forEach`.
 ///
@@ -46,7 +43,7 @@ extension DependencyValues {
 ///
 /// ```swift
 /// case .exitButtonTapped:
-///   return .run { _ in await self.dismiss(animation: .default) }
+///   return .fireAndForget { await self.dismiss(animation: .default) }
 /// ```
 ///
 /// This will cause the `dismiss` or `popFrom(id:)` action to be sent with the particular animation.
@@ -63,17 +60,17 @@ extension DependencyValues {
 /// > some shared mutable state inside the `dismiss` closure to confirm that it is indeed invoked:
 /// >
 /// > ```swift
-/// > let isDismissInvoked: LockIsolated<[Bool]> = .init([])
-/// > let store = TestStore(initialState: Child.State()) {
+/// > let isDismissInvoked = LockIsolated(false)
+/// > let store = Store(initialState: Child.State()) {
 /// >   Child()
 /// > } withDependencies: {
-/// >   $0.dismiss = DismissEffect { isDismissInvoked.withValue { $0.append(true) } }
+/// >   $0.dismiss = { isDismissInvoked.setValue(true) }
 /// > }
 /// >
 /// > await store.send(.exitButtonTapped) {
 /// >   // ...
 /// > }
-/// > XCTAssertEqual(isDismissInvoked.value, [true])
+/// > XCTAssertEqual(isDismissInvoked.value, true)
 /// > ```
 public struct DismissEffect: Sendable {
   var dismiss: (@MainActor @Sendable () -> Void)?
@@ -92,15 +89,6 @@ public struct DismissEffect: Sendable {
     fileID: StaticString = #fileID,
     line: UInt = #line
   ) async {
-    await callAsFunction(transaction: Transaction(animation: animation), fileID: fileID, line: line)
-  }
-
-  @MainActor
-  public func callAsFunction(
-    transaction: Transaction,
-    fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) async {
     guard let dismiss = self.dismiss
     else {
       runtimeWarn(
@@ -116,7 +104,7 @@ public struct DismissEffect: Sendable {
       )
       return
     }
-    withTransaction(transaction) {
+    withAnimation(animation) {
       dismiss()
     }
   }

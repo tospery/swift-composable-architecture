@@ -3,8 +3,8 @@ import XCTest
 
 @testable import UIKitCaseStudies
 
+@MainActor
 final class UIKitCaseStudiesTests: XCTestCase {
-  @MainActor
   func testCountDown() async {
     let store = TestStore(initialState: Counter.State()) {
       Counter()
@@ -18,7 +18,6 @@ final class UIKitCaseStudiesTests: XCTestCase {
     }
   }
 
-  @MainActor
   func testCountDownList() async {
     let firstState = Counter.State()
     let secondState = Counter.State()
@@ -32,24 +31,24 @@ final class UIKitCaseStudiesTests: XCTestCase {
       CounterList()
     }
 
-    await store.send(\.counters[id:firstState.id].incrementButtonTapped) {
+    await store.send(.counter(id: firstState.id, action: .incrementButtonTapped)) {
       $0.counters[id: firstState.id]?.count = 1
     }
-    await store.send(\.counters[id:firstState.id].decrementButtonTapped) {
+    await store.send(.counter(id: firstState.id, action: .decrementButtonTapped)) {
       $0.counters[id: firstState.id]?.count = 0
     }
 
-    await store.send(\.counters[id:secondState.id].incrementButtonTapped) {
+    await store.send(.counter(id: secondState.id, action: .incrementButtonTapped)) {
       $0.counters[id: secondState.id]?.count = 1
     }
-    await store.send(\.counters[id:secondState.id].decrementButtonTapped) {
+    await store.send(.counter(id: secondState.id, action: .decrementButtonTapped)) {
       $0.counters[id: secondState.id]?.count = 0
     }
 
-    await store.send(\.counters[id:thirdState.id].incrementButtonTapped) {
+    await store.send(.counter(id: thirdState.id, action: .incrementButtonTapped)) {
       $0.counters[id: thirdState.id]?.count = 1
     }
-    await store.send(\.counters[id:thirdState.id].decrementButtonTapped) {
+    await store.send(.counter(id: thirdState.id, action: .decrementButtonTapped)) {
       $0.counters[id: thirdState.id]?.count = 0
     }
   }

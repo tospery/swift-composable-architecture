@@ -1,6 +1,5 @@
 import ComposableArchitecture
 
-@Reducer
-struct CounterFeature {
-  
+struct CounterFeature: Reducer {
+
 }

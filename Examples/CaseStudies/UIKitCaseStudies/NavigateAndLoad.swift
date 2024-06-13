@@ -1,15 +1,15 @@
+import Combine
 import ComposableArchitecture
+import SwiftUI
 import UIKit
 
-@Reducer
-struct EagerNavigation {
-  @ObservableState
+struct EagerNavigation: Reducer {
   struct State: Equatable {
     var isNavigationActive = false
     var optionalCounter: Counter.State?
   }
 
-  enum Action {
+  enum Action: Equatable {
     case optionalCounter(Counter.Action)
     case setNavigation(isActive: Bool)
     case setNavigationIsActiveDelayCompleted
@@ -42,17 +42,20 @@ struct EagerNavigation {
         return .none
       }
     }
-    .ifLet(\.optionalCounter, action: \.optionalCounter) {
+    .ifLet(\.optionalCounter, action: /Action.optionalCounter) {
       Counter()
     }
   }
 }
 
 class EagerNavigationViewController: UIViewController {
+  var cancellables: [AnyCancellable] = []
   let store: StoreOf<EagerNavigation>
+  let viewStore: ViewStoreOf<EagerNavigation>
 
   init(store: StoreOf<EagerNavigation>) {
     self.store = store
+    self.viewStore = ViewStore(store, observe: { $0 })
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -63,27 +66,28 @@ class EagerNavigationViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
 
-    title = "Navigate and load"
+    self.title = "Navigate and load"
 
-    view.backgroundColor = .systemBackground
+    self.view.backgroundColor = .systemBackground
 
     let button = UIButton(type: .system)
     button.addTarget(self, action: #selector(loadOptionalCounterTapped), for: .touchUpInside)
     button.setTitle("Load optional counter", for: .normal)
     button.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(button)
+    self.view.addSubview(button)
 
     NSLayoutConstraint.activate([
-      button.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
-      button.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
+      button.centerXAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.centerXAnchor),
+      button.centerYAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.centerYAnchor),
     ])
 
-    observe { [weak self] in
-      guard let self else { return }
-      if store.isNavigationActive {
-        navigationController?.pushViewController(
+    self.viewStore.publisher.isNavigationActive.sink { [weak self] isNavigationActive in
+      guard let self = self else { return }
+      if isNavigationActive {
+        self.navigationController?.pushViewController(
           IfLetStoreController(
-            store.scope(state: \.optionalCounter, action: \.optionalCounter)
+            store: self.store
+              .scope(state: \.optionalCounter, action: EagerNavigation.Action.optionalCounter)
           ) {
             CounterViewController(store: $0)
           } else: {
@@ -92,30 +96,34 @@ class EagerNavigationViewController: UIViewController {
           animated: true
         )
       } else {
-        navigationController?.popToViewController(self, animated: true)
+        _ = self.navigationController?.popToViewController(self, animated: true)
       }
     }
+    .store(in: &self.cancellables)
   }
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
 
-    if !isMovingToParent && store.isNavigationActive {
-      store.send(.setNavigation(isActive: false))
+    if !self.isMovingToParent {
+      self.viewStore.send(.setNavigation(isActive: false))
     }
   }
 
   @objc private func loadOptionalCounterTapped() {
-    store.send(.setNavigation(isActive: true))
+    self.viewStore.send(.setNavigation(isActive: true))
   }
 }
 
-#Preview {
-  UINavigationController(
-    rootViewController: EagerNavigationViewController(
-      store: Store(initialState: EagerNavigation.State()) {
-        EagerNavigation()
-      }
+struct EagerNavigationViewController_Previews: PreviewProvider {
+  static var previews: some View {
+    let vc = UINavigationController(
+      rootViewController: EagerNavigationViewController(
+        store: Store(initialState: EagerNavigation.State()) {
+          EagerNavigation()
+        }
+      )
     )
-  )
+    return UIViewRepresented(makeUIView: { _ in vc.view })
+  }
 }

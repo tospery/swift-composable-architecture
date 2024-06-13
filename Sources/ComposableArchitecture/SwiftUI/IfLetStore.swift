@@ -9,7 +9,7 @@ import SwiftUI
 ///
 /// ```swift
 /// IfLetStore(
-///   store.scope(state: \.results, action: { .results($0) })
+///   store.scope(state: \.results, action: Search.Action.results)
 /// ) {
 ///   SearchResultsView(store: $0)
 /// } else: {
@@ -17,26 +17,6 @@ import SwiftUI
 /// }
 /// ```
 ///
-@available(
-  iOS, deprecated: 9999,
-  message:
-    "Use 'if let' with a store of observable state, instead. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#Replacing-IfLetStore-with-if-let]"
-)
-@available(
-  macOS, deprecated: 9999,
-  message:
-    "Use 'if let' with a store of observable state, instead. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#Replacing-IfLetStore-with-if-let]"
-)
-@available(
-  tvOS, deprecated: 9999,
-  message:
-    "Use 'if let' with a store of observable state, instead. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#Replacing-IfLetStore-with-if-let]"
-)
-@available(
-  watchOS, deprecated: 9999,
-  message:
-    "Use 'if let' with a store of observable state, instead. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7#Replacing-IfLetStore-with-if-let]"
-)
 public struct IfLetStore<State, Action, Content: View>: View {
   private let content: (ViewStore<State?, Action>) -> Content
   private let store: Store<State?, Action>
@@ -54,27 +34,22 @@ public struct IfLetStore<State, Action, Content: View>: View {
     @ViewBuilder then ifContent: @escaping (_ store: Store<State, Action>) -> IfContent,
     @ViewBuilder else elseContent: () -> ElseContent
   ) where Content == _ConditionalContent<IfContent, ElseContent> {
-    let store = store.scope(
-      id: store.id(state: \.self, action: \.self),
-      state: ToState(\.self),
-      action: { $0 },
-      isInvalid: { $0 == nil }
-    )
+    let store = store.invalidate { $0 == nil }
     self.store = store
     let elseContent = elseContent()
     self.content = { viewStore in
       if var state = viewStore.state {
         return ViewBuilder.buildEither(
           first: ifContent(
-            store.scope(
-              id: store.id(state: \.!, action: \.self),
-              state: ToState {
-                state = $0 ?? state
-                return state
-              },
-              action: { $0 },
-              isInvalid: { $0 == nil }
-            )
+            store
+              .invalidate { $0 == nil }
+              .scope(
+                state: {
+                  state = $0 ?? state
+                  return state
+                },
+                action: { $0 }
+              )
           )
         )
       } else {
@@ -94,25 +69,20 @@ public struct IfLetStore<State, Action, Content: View>: View {
     _ store: Store<State?, Action>,
     @ViewBuilder then ifContent: @escaping (_ store: Store<State, Action>) -> IfContent
   ) where Content == IfContent? {
-    let store = store.scope(
-      id: store.id(state: \.self, action: \.self),
-      state: ToState(\.self),
-      action: { $0 },
-      isInvalid: { $0 == nil }
-    )
+    let store = store.invalidate { $0 == nil }
     self.store = store
     self.content = { viewStore in
       if var state = viewStore.state {
         return ifContent(
-          store.scope(
-            id: store.id(state: \.!, action: \.self),
-            state: ToState {
-              state = $0 ?? state
-              return state
-            },
-            action: { $0 },
-            isInvalid: { $0 == nil }
-          )
+          store
+            .invalidate { $0 == nil }
+            .scope(
+              state: {
+                state = $0 ?? state
+                return state
+              },
+              action: { $0 }
+            )
         )
       } else {
         return nil
@@ -128,33 +98,13 @@ public struct IfLetStore<State, Action, Content: View>: View {
   ///   - ifContent: A function that is given a store of non-optional state and returns a view that
   ///     is visible only when the optional state is non-`nil`.
   ///   - elseContent: A view that is only visible when the optional state is `nil`.
-  @available(
-    iOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
-  @available(
-    macOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
-  @available(
-    tvOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
-  @available(
-    watchOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
   public init<IfContent, ElseContent>(
     _ store: Store<PresentationState<State>, PresentationAction<Action>>,
     @ViewBuilder then ifContent: @escaping (_ store: Store<State, Action>) -> IfContent,
     @ViewBuilder else elseContent: @escaping () -> ElseContent
   ) where Content == _ConditionalContent<IfContent, ElseContent> {
     self.init(
-      store.scope(state: \.wrappedValue, action: \.presented),
+      store.scope(state: { $0.wrappedValue }, action: PresentationAction.presented),
       then: ifContent,
       else: elseContent
     )
@@ -167,32 +117,12 @@ public struct IfLetStore<State, Action, Content: View>: View {
   ///   - store: A store of optional state.
   ///   - ifContent: A function that is given a store of non-optional state and returns a view that
   ///     is visible only when the optional state is non-`nil`.
-  @available(
-    iOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
-  @available(
-    macOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
-  @available(
-    tvOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
-  @available(
-    watchOS, deprecated: 9999,
-    message:
-      "Scope the store into the destination's wrapped 'state' and presented 'action', instead: 'store.scope(state: \\.destination, action: \\.destination.presented)'. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
   public init<IfContent>(
     _ store: Store<PresentationState<State>, PresentationAction<Action>>,
     @ViewBuilder then ifContent: @escaping (_ store: Store<State, Action>) -> IfContent
   ) where Content == IfContent? {
     self.init(
-      store.scope(state: \.wrappedValue, action: \.presented),
+      store.scope(state: { $0.wrappedValue }, action: PresentationAction.presented),
       then: ifContent
     )
   }
@@ -211,11 +141,6 @@ public struct IfLetStore<State, Action, Content: View>: View {
   ///     destination state.
   ///   - elseContent: A view that is only visible when state cannot be extracted from the
   ///     destination.
-  @available(
-    *, deprecated,
-    message:
-      "Further scope the store into the 'state' and 'action' cases, instead. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
   public init<DestinationState, DestinationAction, IfContent, ElseContent>(
     _ store: Store<PresentationState<DestinationState>, PresentationAction<DestinationAction>>,
     state toState: @escaping (_ destinationState: DestinationState) -> State?,
@@ -245,11 +170,6 @@ public struct IfLetStore<State, Action, Content: View>: View {
   ///   - ifContent: A function that is given a store of non-optional state and returns a view that
   ///     is visible only when the optional state is non-`nil` and state can be extracted from the
   ///     destination state.
-  @available(
-    *, deprecated,
-    message:
-      "Further scope the store into the 'state' and 'action' cases, instead. For more information, see the following article: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5#Enum-driven-navigation-APIs"
-  )
   public init<DestinationState, DestinationAction, IfContent>(
     _ store: Store<PresentationState<DestinationState>, PresentationAction<DestinationAction>>,
     state toState: @escaping (_ destinationState: DestinationState) -> State?,

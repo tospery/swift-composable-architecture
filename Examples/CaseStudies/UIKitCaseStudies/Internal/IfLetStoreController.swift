@@ -10,17 +10,17 @@ final class IfLetStoreController<State, Action>: UIViewController {
   private var cancellables: Set<AnyCancellable> = []
   private var viewController = UIViewController() {
     willSet {
-      viewController.willMove(toParent: nil)
-      viewController.view.removeFromSuperview()
-      viewController.removeFromParent()
-      addChild(newValue)
-      view.addSubview(newValue.view)
+      self.viewController.willMove(toParent: nil)
+      self.viewController.view.removeFromSuperview()
+      self.viewController.removeFromParent()
+      self.addChild(newValue)
+      self.view.addSubview(newValue.view)
       newValue.didMove(toParent: self)
     }
   }
 
   init(
-    _ store: Store<State?, Action>,
+    store: Store<State?, Action>,
     then ifDestination: @escaping (Store<State, Action>) -> UIViewController,
     else elseDestination: @escaping () -> UIViewController
   ) {
@@ -37,16 +37,16 @@ final class IfLetStoreController<State, Action>: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
 
-    store.ifLet(
+    self.store.ifLet(
       then: { [weak self] store in
-        guard let self else { return }
-        viewController = ifDestination(store)
+        guard let self = self else { return }
+        self.viewController = self.ifDestination(store)
       },
       else: { [weak self] in
-        guard let self else { return }
-        viewController = elseDestination()
+        guard let self = self else { return }
+        self.viewController = self.elseDestination()
       }
     )
-    .store(in: &cancellables)
+    .store(in: &self.cancellables)
   }
 }

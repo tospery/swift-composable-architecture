@@ -103,27 +103,25 @@ final class DemandBuffer<S: Subscriber>: @unchecked Sendable {
   }
 }
 
-extension AnyPublisher where Failure == Never {
+extension AnyPublisher {
   private init(
-    _ callback: @escaping (Effect<Output>.Subscriber) -> Cancellable
+    _ callback: @escaping (EffectPublisher<Output, Failure>.Subscriber) -> Cancellable
   ) {
     self = Publishers.Create(callback: callback).eraseToAnyPublisher()
   }
 
   static func create(
-    _ factory: @escaping (Effect<Output>.Subscriber) -> Cancellable
+    _ factory: @escaping (EffectPublisher<Output, Failure>.Subscriber) -> Cancellable
   ) -> AnyPublisher<Output, Failure> {
     AnyPublisher(factory)
   }
 }
 
 extension Publishers {
-  fileprivate class Create<Output>: Publisher {
-    typealias Failure = Never
+  fileprivate class Create<Output, Failure: Swift.Error>: Publisher {
+    private let callback: (EffectPublisher<Output, Failure>.Subscriber) -> Cancellable
 
-    private let callback: (Effect<Output>.Subscriber) -> Cancellable
-
-    init(callback: @escaping (Effect<Output>.Subscriber) -> Cancellable) {
+    init(callback: @escaping (EffectPublisher<Output, Failure>.Subscriber) -> Cancellable) {
       self.callback = callback
     }
 
@@ -135,12 +133,12 @@ extension Publishers {
 
 extension Publishers.Create {
   fileprivate final class Subscription<Downstream: Subscriber>: Combine.Subscription
-  where Downstream.Input == Output, Downstream.Failure == Never {
+  where Downstream.Input == Output, Downstream.Failure == Failure {
     private let buffer: DemandBuffer<Downstream>
     private var cancellable: Cancellable?
 
     init(
-      callback: @escaping (Effect<Output>.Subscriber) -> Cancellable,
+      callback: @escaping (EffectPublisher<Output, Failure>.Subscriber) -> Cancellable,
       downstream: Downstream
     ) {
       self.buffer = DemandBuffer(subscriber: downstream)
@@ -167,18 +165,18 @@ extension Publishers.Create {
 
 extension Publishers.Create.Subscription: CustomStringConvertible {
   var description: String {
-    return "Create.Subscription<\(Output.self)>"
+    return "Create.Subscription<\(Output.self), \(Failure.self)>"
   }
 }
 
-extension Effect {
-  struct Subscriber {
+extension EffectPublisher {
+  public struct Subscriber {
     private let _send: (Action) -> Void
-    private let _complete: (Subscribers.Completion<Never>) -> Void
+    private let _complete: (Subscribers.Completion<Failure>) -> Void
 
     init(
       send: @escaping (Action) -> Void,
-      complete: @escaping (Subscribers.Completion<Never>) -> Void
+      complete: @escaping (Subscribers.Completion<Failure>) -> Void
     ) {
       self._send = send
       self._complete = complete
@@ -188,7 +186,7 @@ extension Effect {
       self._send(value)
     }
 
-    public func send(completion: Subscribers.Completion<Never>) {
+    public func send(completion: Subscribers.Completion<Failure>) {
       self._complete(completion)
     }
   }

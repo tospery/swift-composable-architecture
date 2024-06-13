@@ -1,29 +1,33 @@
 import SwiftUI
 
 struct ContactDetailView: View {
-  @Bindable var store: StoreOf<ContactDetailFeature>
-  
+  let store: StoreOf<ContactDetailFeature>
+
   var body: some View {
-    Form {
-      Button("Delete") {
-        store.send(.deleteButtonTapped)
+    WithViewStore(self.store, observe: { $0 }) { viewStore in
+      Form {
+        Button("Delete") {
+          viewStore.send(.deleteButtonTapped)
+        }
       }
+      .navigationBarTitle(Text(viewStore.contact.name))
     }
-    .navigationTitle(Text(store.contact.name))
-    .alert($store.scope(state: \.alert, action: \.alert))
+    .alert(store: self.store.scope(state: \.$alert, action: { .alert($0) }))
   }
 }
 
-#Preview {
-  NavigationStack {
-    ContactDetailView(
-      store: Store(
-        initialState: ContactDetailFeature.State(
-          contact: Contact(id: UUID(), name: "Blob")
-        )
-      ) {
-        ContactDetailFeature()
-      }
-    )
+struct ContactDetailPreviews: PreviewProvider {
+  static var previews: some View {
+    NavigationStack {
+      ContactDetailView(
+        store: Store(
+          initialState: ContactDetailFeature.State(
+            contact: Contact(id: UUID(), name: "Blob")
+          )
+        ) {
+          ContactDetailFeature()
+        }
+      )
+    }
   }
 }

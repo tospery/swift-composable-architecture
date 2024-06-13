@@ -2,25 +2,24 @@ import ComposableArchitecture
 import SwiftUI
 
 private let readMe = """
-  This demonstrates how to make use of SwiftUI's `@FocusState` in the Composable Architecture with \
-  the library's `bind` view modifier. If you tap the "Sign in" button while a field is empty, the \
-  focus will be changed to the first empty field.
+  This demonstrates how to make use of SwiftUI's `@FocusState` in the Composable Architecture. \
+  If you tap the "Sign in" button while a field is empty, the focus will be changed to that field.
   """
 
-@Reducer
-struct FocusDemo {
-  @ObservableState
+// MARK: - Feature domain
+
+struct FocusDemo: Reducer {
   struct State: Equatable {
-    var focusedField: Field?
-    var password: String = ""
-    var username: String = ""
+    @BindingState var focusedField: Field?
+    @BindingState var password: String = ""
+    @BindingState var username: String = ""
 
     enum Field: String, Hashable {
       case username, password
     }
   }
 
-  enum Action: BindableAction {
+  enum Action: BindableAction, Equatable {
     case binding(BindingAction<State>)
     case signInButtonTapped
   }
@@ -44,38 +43,56 @@ struct FocusDemo {
   }
 }
 
+// MARK: - Feature view
+
 struct FocusDemoView: View {
-  @Bindable var store: StoreOf<FocusDemo>
+  let store: StoreOf<FocusDemo>
   @FocusState var focusedField: FocusDemo.State.Field?
 
   var body: some View {
-    Form {
-      AboutView(readMe: readMe)
+    WithViewStore(self.store, observe: { $0 }) { viewStore in
+      Form {
+        AboutView(readMe: readMe)
 
-      VStack {
-        TextField("Username", text: $store.username)
-          .focused($focusedField, equals: .username)
-        SecureField("Password", text: $store.password)
-          .focused($focusedField, equals: .password)
-        Button("Sign In") {
-          store.send(.signInButtonTapped)
+        VStack {
+          TextField("Username", text: viewStore.$username)
+            .focused($focusedField, equals: .username)
+          SecureField("Password", text: viewStore.$password)
+            .focused($focusedField, equals: .password)
+          Button("Sign In") {
+            viewStore.send(.signInButtonTapped)
+          }
+          .buttonStyle(.borderedProminent)
         }
-        .buttonStyle(.borderedProminent)
+        .textFieldStyle(.roundedBorder)
       }
-      .textFieldStyle(.roundedBorder)
+      .synchronize(viewStore.$focusedField, self.$focusedField)
     }
-    // Synchronize store focus state and local focus state.
-    .bind($store.focusedField, to: $focusedField)
     .navigationTitle("Focus demo")
   }
 }
 
-#Preview {
-  NavigationStack {
-    FocusDemoView(
-      store: Store(initialState: FocusDemo.State()) {
-        FocusDemo()
-      }
-    )
+extension View {
+  func synchronize<Value>(
+    _ first: Binding<Value>,
+    _ second: FocusState<Value>.Binding
+  ) -> some View {
+    self
+      .onChange(of: first.wrappedValue) { second.wrappedValue = $0 }
+      .onChange(of: second.wrappedValue) { first.wrappedValue = $0 }
+  }
+}
+
+// MARK: - SwiftUI previews
+
+struct FocusDemo_Previews: PreviewProvider {
+  static var previews: some View {
+    NavigationView {
+      FocusDemoView(
+        store: Store(initialState: FocusDemo.State()) {
+          FocusDemo()
+        }
+      )
+    }
   }
 }

@@ -1,13 +1,36 @@
+import Combine
 import ComposableArchitecture
 import TwoFactorCore
 import UIKit
 
-@ViewAction(for: TwoFactor.self)
 public final class TwoFactorViewController: UIViewController {
-  public let store: StoreOf<TwoFactor>
+  let store: StoreOf<TwoFactor>
+  let viewStore: ViewStore<ViewState, ViewAction>
+  private var cancellables: Set<AnyCancellable> = []
+
+  struct ViewState: Equatable {
+    let alert: AlertState<TwoFactor.Action.Alert>?
+    let code: String?
+    let isActivityIndicatorHidden: Bool
+    let isLoginButtonEnabled: Bool
+
+    init(state: TwoFactor.State) {
+      self.alert = state.alert
+      self.code = state.code
+      self.isActivityIndicatorHidden = !state.isTwoFactorRequestInFlight
+      self.isLoginButtonEnabled = state.isFormValid && !state.isTwoFactorRequestInFlight
+    }
+  }
+
+  enum ViewAction {
+    case alertDismissed
+    case codeChanged(String?)
+    case loginButtonTapped
+  }
 
   public init(store: StoreOf<TwoFactor>) {
     self.store = store
+    self.viewStore = ViewStore(store, observe: ViewState.init, send: TwoFactor.Action.init)
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -18,7 +41,7 @@ public final class TwoFactorViewController: UIViewController {
   public override func viewDidLoad() {
     super.viewDidLoad()
 
-    view.backgroundColor = .systemBackground
+    self.view.backgroundColor = .systemBackground
 
     let titleLabel = UILabel()
     titleLabel.text = "Enter the one time code to continue"
@@ -49,44 +72,61 @@ public final class TwoFactorViewController: UIViewController {
     rootStackView.axis = .vertical
     rootStackView.spacing = 24
 
-    view.addSubview(rootStackView)
+    self.view.addSubview(rootStackView)
 
     NSLayoutConstraint.activate([
-      rootStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      rootStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      rootStackView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+      rootStackView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+      rootStackView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+      rootStackView.centerYAnchor.constraint(equalTo: self.view.centerYAnchor),
     ])
 
-    var alertController: UIAlertController?
+    self.viewStore.publisher.isActivityIndicatorHidden
+      .assign(to: \.isHidden, on: activityIndicator)
+      .store(in: &self.cancellables)
 
-    observe { [weak self] in
-      guard let self else { return }
-      activityIndicator.isHidden = store.isActivityIndicatorHidden
-      codeTextField.text = store.code
-      loginButton.isEnabled = store.isLoginButtonEnabled
+    self.viewStore.publisher.code
+      .assign(to: \.text, on: codeTextField)
+      .store(in: &self.cancellables)
 
-      if let store = store.scope(state: \.alert, action: \.alert),
-        alertController == nil
-      {
-        alertController = UIAlertController(store: store)
-        present(alertController!, animated: true, completion: nil)
-      } else if store.alert == nil, alertController != nil {
-        alertController?.dismiss(animated: true)
-        alertController = nil
+    self.viewStore.publisher.isLoginButtonEnabled
+      .assign(to: \.isEnabled, on: loginButton)
+      .store(in: &self.cancellables)
+
+    self.viewStore.publisher.alert
+      .sink { [weak self] alert in
+        guard let self = self else { return }
+        guard let alert = alert else { return }
+
+        let alertController = UIAlertController(
+          title: String(state: alert.title), message: nil, preferredStyle: .alert)
+        alertController.addAction(
+          UIAlertAction(title: "Ok", style: .default) { _ in
+            self.viewStore.send(.alertDismissed)
+          }
+        )
+        self.present(alertController, animated: true, completion: nil)
       }
-    }
+      .store(in: &self.cancellables)
   }
 
   @objc private func codeTextFieldChanged(sender: UITextField) {
-    store.code = sender.text ?? ""
+    self.viewStore.send(.codeChanged(sender.text))
   }
 
   @objc private func loginButtonTapped() {
-    send(.submitButtonTapped)
+    self.viewStore.send(.loginButtonTapped)
   }
 }
 
-extension TwoFactor.State {
-  fileprivate var isActivityIndicatorHidden: Bool { !isTwoFactorRequestInFlight }
-  fileprivate var isLoginButtonEnabled: Bool { isFormValid && !isTwoFactorRequestInFlight }
+extension TwoFactor.Action {
+  init(action: TwoFactorViewController.ViewAction) {
+    switch action {
+    case .alertDismissed:
+      self = .alert(.dismiss)
+    case let .codeChanged(code):
+      self = .view(.set(\.$code, code ?? ""))
+    case .loginButtonTapped:
+      self = .view(.submitButtonTapped)
+    }
+  }
 }

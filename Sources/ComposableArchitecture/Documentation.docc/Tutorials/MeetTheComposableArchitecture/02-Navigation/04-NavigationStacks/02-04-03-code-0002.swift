@@ -1,13 +1,11 @@
 import ComposableArchitecture
 
-@Reducer
-struct ContactDetailFeature {
-  @ObservableState
+struct ContactDetailFeature: Reducer {
   struct State: Equatable {
-    @Presents var alert: AlertState<Action.Alert>?
+    @PresentationState var alert: AlertState<Action.Alert>?
     let contact: Contact
   }
-  enum Action {
+  enum Action: Equatable {
     case alert(PresentationAction<Alert>)
     case delegate(Delegate)
     case deleteButtonTapped
@@ -36,7 +34,6 @@ struct ContactDetailFeature {
         return .none
       }
     }
-    .ifLet(\.$alert, action: \.alert)
   }
 }
 

@@ -1,11 +1,11 @@
-import ComposableArchitecture
+import Dependencies
 import Foundation
+import XCTestDynamicOverlay
 
-@DependencyClient
 struct AudioRecorderClient {
   var currentTime: @Sendable () async -> TimeInterval?
-  var requestRecordPermission: @Sendable () async -> Bool = { false }
-  var startRecording: @Sendable (_ url: URL) async throws -> Bool
+  var requestRecordPermission: @Sendable () async -> Bool
+  var startRecording: @Sendable (URL) async throws -> Bool
   var stopRecording: @Sendable () async -> Void
 }
 
@@ -20,7 +20,7 @@ extension AudioRecorderClient: TestDependencyKey {
       startRecording: { _ in
         await isRecording.setValue(true)
         while await isRecording.value {
-          try await Task.sleep(for: .seconds(1))
+          try await Task.sleep(nanoseconds: NSEC_PER_SEC)
           await currentTime.withValue { $0 += 1 }
         }
         return true
@@ -32,7 +32,14 @@ extension AudioRecorderClient: TestDependencyKey {
     )
   }
 
-  static let testValue = Self()
+  static let testValue = Self(
+    currentTime: unimplemented("\(Self.self).currentTime", placeholder: nil),
+    requestRecordPermission: unimplemented(
+      "\(Self.self).requestRecordPermission", placeholder: false
+    ),
+    startRecording: unimplemented("\(Self.self).startRecording", placeholder: false),
+    stopRecording: unimplemented("\(Self.self).stopRecording")
+  )
 }
 
 extension DependencyValues {

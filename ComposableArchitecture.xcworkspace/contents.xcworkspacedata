@@ -17,7 +17,7 @@
       location = "group:Examples/SpeechRecognition/SpeechRecognition.xcodeproj">
    </FileRef>
    <FileRef
-      location = "group:Examples/SyncUps/SyncUps.xcodeproj">
+      location = "group:Examples/Standups/Standups.xcodeproj">
    </FileRef>
    <FileRef
       location = "group:Examples/TicTacToe/TicTacToe.xcodeproj">

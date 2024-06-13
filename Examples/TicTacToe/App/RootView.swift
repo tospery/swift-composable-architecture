@@ -28,8 +28,8 @@ enum GameType: Identifiable {
 }
 
 struct RootView: View {
-  let store = Store(initialState: TicTacToe.State.login(.init())) {
-    TicTacToe.body._printChanges()
+  let store = Store(initialState: TicTacToe.State()) {
+    TicTacToe()._printChanges()
   }
 
   @State var showGame: GameType?
@@ -40,15 +40,15 @@ struct RootView: View {
         Text(readMe)
 
         Section {
-          Button("SwiftUI version") { showGame = .swiftui }
-          Button("UIKit version") { showGame = .uikit }
+          Button("SwiftUI version") { self.showGame = .swiftui }
+          Button("UIKit version") { self.showGame = .uikit }
         }
       }
-      .sheet(item: $showGame) { gameType in
+      .sheet(item: self.$showGame) { gameType in
         if gameType == .swiftui {
-          AppView(store: store)
+          AppView(store: self.store)
         } else {
-          UIKitAppView(store: store)
+          UIKitAppView(store: self.store)
         }
       }
       .navigationTitle("Tic-Tac-Toe")
@@ -56,6 +56,8 @@ struct RootView: View {
   }
 }
 
-#Preview {
-  RootView()
+struct RootView_Previews: PreviewProvider {
+  static var previews: some View {
+    RootView()
+  }
 }

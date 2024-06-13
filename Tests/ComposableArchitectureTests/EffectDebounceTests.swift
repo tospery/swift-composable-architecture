@@ -1,25 +1,22 @@
 import Combine
-@_spi(Internals) import ComposableArchitecture
+import ComposableArchitecture
 import XCTest
 
+@MainActor
+@available(*, deprecated)
 final class EffectDebounceTests: BaseTCATestCase {
-  @MainActor
+  var cancellables: Set<AnyCancellable> = []
+
   func testDebounce() async {
     let mainQueue = DispatchQueue.test
     var values: [Int] = []
 
-    @discardableResult
-    func runDebouncedEffect(value: Int) -> Task<Void, Never> {
-      Task {
-        struct CancelToken: Hashable {}
-
-        let effect = Effect.send(value)
-          .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
-
-        for await action in effect.actions {
-          values.append(action)
-        }
-      }
+    func runDebouncedEffect(value: Int) {
+      struct CancelToken: Hashable {}
+      Effect.send(value)
+        .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
+        .sink { values.append($0) }
+        .store(in: &self.cancellables)
     }
 
     runDebouncedEffect(value: 1)
@@ -54,29 +51,22 @@ final class EffectDebounceTests: BaseTCATestCase {
     XCTAssertEqual(values, [3])
   }
 
-  @MainActor
   func testDebounceIsLazy() async {
     let mainQueue = DispatchQueue.test
     var values: [Int] = []
     var effectRuns = 0
 
-    @discardableResult
-    func runDebouncedEffect(value: Int) -> Task<Void, Never> {
-      Task {
-        struct CancelToken: Hashable {}
+    func runDebouncedEffect(value: Int) {
+      struct CancelToken: Hashable {}
 
-        let effect = Effect.publisher {
-          Deferred { () -> Just<Int> in
-            effectRuns += 1
-            return Just(1)
-          }
-        }
-        .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
-
-        for await action in effect.actions {
-          values.append(action)
-        }
+      Deferred { () -> Just<Int> in
+        effectRuns += 1
+        return Just(value)
       }
+      .eraseToEffect()
+      .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
+      .sink { values.append($0) }
+      .store(in: &self.cancellables)
     }
 
     runDebouncedEffect(value: 1)

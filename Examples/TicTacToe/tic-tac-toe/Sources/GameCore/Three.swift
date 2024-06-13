@@ -44,4 +44,3 @@ extension Three: RandomAccessCollection {}
 
 extension Three: Equatable where Element: Equatable {}
 extension Three: Hashable where Element: Hashable {}
-extension Three: Sendable where Element: Sendable {}

@@ -4,26 +4,41 @@ Review unsupported test store APIs and their replacements.
 
 ## Overview
 
-Avoid using deprecated APIs in your app. Select a method to see the replacement that you should use
-instead.
+Avoid using deprecated APIs in your app. Select a method to see the replacement that you should use instead.
 
 ## Topics
 
-### Nanosecond timeouts
+### Creating a test store
 
-- ``TestStore/finish(timeout:file:line:)-43l4y``
-- ``TestStore/receive(_:timeout:assert:file:line:)-5vi0x``
-- ``TestStore/receive(_:timeout:assert:file:line:)-7hcfs``
-- ``TestStore/receive(_:timeout:assert:file:line:)-8r59i``
-- ``TestStore/receive(_:_:timeout:assert:file:line:)-8g1si``
+- ``TestStore/init(initialState:reducer:prepareDependencies:file:line:)-5ef6m``
+- ``TestStore/init(initialState:reducer:observe:prepareDependencies:file:line:)``
+- ``TestStore/init(initialState:reducer:observe:send:prepareDependencies:file:line:)``
+- ``TestStore/init(initialState:reducer:environment:file:line:)``
+- ``TestStore/init(initialState:reducer:withDependencies:file:line:)-762zz``
+- ``TestStore/init(initialState:reducer:prepareDependencies:file:line:)-4wg3t``
 
-### Case path deprecations
+### Configuring a test store
 
-- ``TestStore/receive(_:timeout:assert:file:line:)-7608x``
-- ``TestStore/receive(_:timeout:assert:file:line:)-42avx``
-- ``TestStore/bindings(action:)-7aomj``
+- ``TestStore/environment``
 
-### Bindings
+### Testing reducers
 
-- ``TestStore/bindings``
-- ``TestStore/bindings(action:)-2nhb5``
+- ``TestStore/send(_:assert:file:line:)-30pjj``
+- ``TestStore/receive(_:assert:file:line:)-2nhm0``
+- ``TestStore/receive(_:assert:file:line:)-1bfw4``
+- ``TestStore/receive(_:assert:file:line:)-5o4u3``
+- ``TestStore/assert(_:file:line:)-707lb``
+- ``TestStore/assert(_:file:line:)-4gff7``
+- ``TestStore/LocalState``
+- ``TestStore/LocalAction``
+- ``TestStore/Step``
+
+### Methods for skipping tests
+
+- ``TestStore/skipReceivedActions(strict:file:line:)-3nldt``
+- ``TestStore/skipInFlightEffects(strict:file:line:)-95n5f``
+
+### Scoping test stores
+
+- ``TestStore/scope(state:action:)``
+- ``TestStore/scope(state:)``

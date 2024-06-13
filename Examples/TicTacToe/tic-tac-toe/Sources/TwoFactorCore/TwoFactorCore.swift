@@ -3,12 +3,10 @@ import Combine
 import ComposableArchitecture
 import Dispatch
 
-@Reducer
-public struct TwoFactor: Sendable {
-  @ObservableState
+public struct TwoFactor: Reducer, Sendable {
   public struct State: Equatable {
-    @Presents public var alert: AlertState<Action.Alert>?
-    public var code = ""
+    @PresentationState public var alert: AlertState<Action.Alert>?
+    @BindingState public var code = ""
     public var isFormValid = false
     public var isTwoFactorRequestInFlight = false
     public let token: String
@@ -18,15 +16,14 @@ public struct TwoFactor: Sendable {
     }
   }
 
-  public enum Action: Sendable, ViewAction {
+  public enum Action: Equatable {
     case alert(PresentationAction<Alert>)
-    case twoFactorResponse(Result<AuthenticationResponse, Error>)
+    case twoFactorResponse(TaskResult<AuthenticationResponse>)
     case view(View)
 
-    public enum Alert: Equatable, Sendable {}
+    public enum Alert: Equatable {}
 
-    @CasePathable
-    public enum View: BindableAction, Sendable {
+    public enum View: BindableAction, Equatable {
       case binding(BindingAction<State>)
       case submitButtonTapped
     }
@@ -37,7 +34,7 @@ public struct TwoFactor: Sendable {
   public init() {}
 
   public var body: some ReducerOf<Self> {
-    BindingReducer(action: \.view)
+    BindingReducer(action: /Action.view)
     Reduce { state, action in
       switch action {
       case .alert:
@@ -58,17 +55,15 @@ public struct TwoFactor: Sendable {
 
       case .view(.submitButtonTapped):
         state.isTwoFactorRequestInFlight = true
-        return .run { [code = state.code, token = state.token] send in
-          await send(
-            .twoFactorResponse(
-              await Result {
-                try await self.authenticationClient.twoFactor(code: code, token: token)
-              }
-            )
+        return .task { [code = state.code, token = state.token] in
+          .twoFactorResponse(
+            await TaskResult {
+              try await self.authenticationClient.twoFactor(.init(code: code, token: token))
+            }
           )
         }
       }
     }
-    .ifLet(\.$alert, action: \.alert)
+    .ifLet(\.$alert, action: /Action.alert)
   }
 }

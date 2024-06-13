@@ -1,50 +1,47 @@
-#if swift(>=5.9)
-  import ComposableArchitecture
-  import XCTest
+import ComposableArchitecture
+import XCTest
 
-  @available(*, deprecated, message: "TODO: Update to use case pathable syntax with Swift 5.9")
-  final class ScopeTests: BaseTCATestCase {
-    @MainActor
-    func testStructChild() async {
-      let store = TestStore(initialState: Feature.State()) {
-        Feature()
-      }
-
-      await store.send(.child1(.incrementButtonTapped)) {
-        $0.child1.count = 1
-      }
-      await store.send(.child1(.decrementButtonTapped)) {
-        $0.child1.count = 0
-      }
-      await store.send(.child1(.decrementButtonTapped)) {
-        $0.child1.count = -1
-      }
-      await store.receive(.child1(.incrementButtonTapped)) {
-        $0.child1.count = 0
-      }
+@MainActor
+final class ScopeTests: BaseTCATestCase {
+  func testStructChild() async {
+    let store = TestStore(initialState: Feature.State()) {
+      Feature()
     }
 
-    @MainActor
-    func testEnumChild() async {
-      let store = TestStore(initialState: Feature.State()) {
-        Feature()
-      }
+    await store.send(.child1(.incrementButtonTapped)) {
+      $0.child1.count = 1
+    }
+    await store.send(.child1(.decrementButtonTapped)) {
+      $0.child1.count = 0
+    }
+    await store.send(.child1(.decrementButtonTapped)) {
+      $0.child1.count = -1
+    }
+    await store.receive(.child1(.incrementButtonTapped)) {
+      $0.child1.count = 0
+    }
+  }
 
-      await store.send(.child2(.count(1))) {
-        $0.child2 = .count(1)
-      }
-      await store.send(.child2(.count(-1))) {
-        $0.child2 = .count(-1)
-      }
-      await store.receive(.child2(.count(0))) {
-        $0.child2 = .count(0)
-      }
+  func testEnumChild() async {
+    let store = TestStore(initialState: Feature.State()) {
+      Feature()
     }
 
-    @MainActor
+    await store.send(.child2(.count(1))) {
+      $0.child2 = .count(1)
+    }
+    await store.send(.child2(.count(-1))) {
+      $0.child2 = .count(-1)
+    }
+    await store.receive(.child2(.count(0))) {
+      $0.child2 = .count(0)
+    }
+  }
+
+  #if DEBUG
     func testNilChild() async {
-      let store = TestStoreOf<Child2>(initialState: Child2.State.count(0)) {
-        Scope(state: \.name, action: \.name) {}
+      let store = TestStore(initialState: Child2.State.count(0)) {
+        Scope(state: /Child2.State.name, action: /Child2.Action.name) {}
       }
 
       XCTExpectFailure {
@@ -77,80 +74,75 @@
 
       await store.send(.name("Blob"))
     }
-  }
+  #endif
+}
 
-  @Reducer
-  private struct Feature {
-    struct State: Equatable {
-      var child1 = Child1.State()
-      var child2 = Child2.State.count(0)
+private struct Feature: Reducer {
+  struct State: Equatable {
+    var child1 = Child1.State()
+    var child2 = Child2.State.count(0)
+  }
+  enum Action: Equatable {
+    case child1(Child1.Action)
+    case child2(Child2.Action)
+  }
+  var body: some ReducerOf<Self> {
+    Scope(state: \.child1, action: /Action.child1) {
+      Child1()
     }
-    enum Action: Equatable {
-      case child1(Child1.Action)
-      case child2(Child2.Action)
-    }
-    var body: some ReducerOf<Self> {
-      Scope(state: \.child1, action: \.child1) {
-        Child1()
-      }
-      Scope(state: \.child2, action: \.child2) {
-        Child2()
-      }
+    Scope(state: \.child2, action: /Action.child2) {
+      Child2()
     }
   }
+}
 
-  @Reducer
-  private struct Child1 {
-    struct State: Equatable {
-      var count = 0
+private struct Child1: Reducer {
+  struct State: Equatable {
+    var count = 0
+  }
+  enum Action: Equatable {
+    case decrementButtonTapped
+    case incrementButtonTapped
+  }
+  func reduce(into state: inout State, action: Action) -> Effect<Action> {
+    switch action {
+    case .decrementButtonTapped:
+      state.count -= 1
+      return state.count < 0
+        ? .run { await $0(.incrementButtonTapped) }
+        : .none
+    case .incrementButtonTapped:
+      state.count += 1
+      return .none
     }
-    enum Action: Equatable {
-      case decrementButtonTapped
-      case incrementButtonTapped
-    }
-    var body: some Reducer<State, Action> {
+  }
+}
+
+private struct Child2: Reducer {
+  enum State: Equatable {
+    case count(Int)
+    case name(String)
+  }
+  enum Action: Equatable {
+    case count(Int)
+    case name(String)
+  }
+  var body: some ReducerOf<Self> {
+    Scope(state: /State.count, action: /Action.count) {
       Reduce { state, action in
-        switch action {
-        case .decrementButtonTapped:
-          state.count -= 1
-          return state.count < 0
-            ? .run { await $0(.incrementButtonTapped) }
-            : .none
-        case .incrementButtonTapped:
-          state.count += 1
-          return .none
-        }
+        state = action
+        return state < 0
+          ? .run { await $0(0) }
+          : .none
+      }
+    }
+    Scope(state: /State.name, action: /Action.name) {
+      Reduce { state, action in
+        state = action
+        return state.isEmpty
+          ? .run { await $0("Empty") }
+          : .none
       }
     }
   }
-
-  @Reducer
-  private struct Child2 {
-    enum State: Equatable {
-      case count(Int)
-      case name(String)
-    }
-    enum Action: Equatable {
-      case count(Int)
-      case name(String)
-    }
-    var body: some ReducerOf<Self> {
-      Scope(state: \.count, action: \.count) {
-        Reduce { state, action in
-          state = action
-          return state < 0
-            ? .run { await $0(0) }
-            : .none
-        }
-      }
-      Scope(state: \.name, action: \.name) {
-        Reduce { state, action in
-          state = action
-          return state.isEmpty
-            ? .run { await $0("Empty") }
-            : .none
-        }
-      }
-    }
-  }
-#endif
+}

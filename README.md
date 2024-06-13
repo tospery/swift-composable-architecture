@@ -55,8 +55,8 @@ hosted by [Brandon Williams][mbrandonw] and [Stephen Celis][stephencelis].
 You can watch all of the episodes [here][tca-episode-collection], as well as a dedicated, [multipart
 tour][tca-tour] of the architecture from scratch.
 
-<a href="https://www.pointfree.co/collections/tours/composable-architecture-1-0">
-  <img alt="video poster image" src="https://d3rccdn33rt8ze.cloudfront.net/episodes/0243.jpeg" width="600">
+<a href="https://www.pointfree.co/collections/composable-architecture">
+  <img alt="video poster image" src="https://i.vimeocdn.com/video/1492464398-1f5189a415136097aabf5b0b4845928bbb5d425a149069e4e0a848b67618a6f3-d?mw=1900&mh=1069&q=70" width="600">
 </a>
 
 ## Examples
@@ -76,7 +76,7 @@ the Composable Architecture. Check out [this](./Examples) directory to see them 
 * [Motion manager](https://github.com/pointfreeco/composable-core-motion/tree/main/Examples/MotionManager)
 * [Search](./Examples/Search)
 * [Speech Recognition](./Examples/SpeechRecognition)
-* [SyncUps app](./Examples/SyncUps)
+* [Standups app](./Examples/Standups)
 * [Tic-Tac-Toe](./Examples/TicTacToe)
 * [Todos](./Examples/Todos)
 * [Voice memos](./Examples/VoiceMemos)
@@ -86,7 +86,7 @@ iOS word search game built in SwiftUI and the Composable Architecture.
 
 ## Basic Usage
 
-> [!Note] 
+> **Note**
 > For a step-by-step interactive tutorial, be sure to check out [Meet the Composable
 > Architecture][meet-tca].
 
@@ -109,48 +109,42 @@ will be able to break large, complex features into smaller domains that can be g
 
 As a basic example, consider a UI that shows a number along with "+" and "−" buttons that increment 
 and decrement the number. To make things interesting, suppose there is also a button that when 
-tapped makes an API request to fetch a random fact about that number and displays it in the view.
+tapped makes an API request to fetch a random fact about that number and then displays the fact in 
+an alert.
 
 To implement this feature we create a new type that will house the domain and behavior of the 
-feature, and it will be annotated with the `@Reducer` macro:
+feature by conforming to `Reducer`:
 
 ```swift
 import ComposableArchitecture
 
-@Reducer
-struct Feature {
+struct Feature: Reducer {
 }
 ```
 
 In here we need to define a type for the feature's state, which consists of an integer for the 
-current count, as well as an optional string that represents the fact being presented:
+current count, as well as an optional string that represents the title of the alert we want to show
+(optional because `nil` represents not showing an alert):
 
 ```swift
-@Reducer
-struct Feature {
-  @ObservableState
+struct Feature: Reducer {
   struct State: Equatable {
     var count = 0
-    var numberFact: String?
+    var numberFactAlert: String?
   }
 }
 ```
 
-> [!Note] 
-> We've applied the `@ObservableState` macro to `State` in order to take advantage of the
-> observation tools in the library.
-
 We also need to define a type for the feature's actions. There are the obvious actions, such as 
 tapping the decrement button, increment button, or fact button. But there are also some slightly 
-non-obvious ones, such as the action that occurs when we receive a response from the fact API 
-request:
+non-obvious ones, such as the action of the user dismissing the alert, and the action that occurs 
+when we receive a response from the fact API request:
 
 ```swift
-@Reducer
-struct Feature {
-  @ObservableState
+struct Feature: Reducer {
   struct State: Equatable { /* ... */ }
-  enum Action {
+  enum Action: Equatable {
+    case factAlertDismissed
     case decrementButtonTapped
     case incrementButtonTapped
     case numberFactButtonTapped
@@ -159,43 +153,43 @@ struct Feature {
 }
 ```
 
-And then we implement the `body` property, which is responsible for composing the actual logic and 
-behavior for the feature. In it we can use the `Reduce` reducer to describe how to change the
-current state to the next state, and what effects need to be executed. Some actions don't need to
-execute effects, and they can return `.none` to represent that:
+And then we implement the `reduce` method which is responsible for handling the actual logic and 
+behavior for the feature. It describes how to change the current state to the next state, and 
+describes what effects need to be executed. Some actions don't need to execute effects, and they 
+can return `.none` to represent that:
 
 ```swift
-@Reducer
-struct Feature {
-  @ObservableState
+struct Feature: Reducer {
   struct State: Equatable { /* ... */ }
-  enum Action { /* ... */ }
+  enum Action: Equatable { /* ... */ }
+  
+  func reduce(into state: inout State, action: Action) -> Effect<Action> {
+    switch action {
+    case .factAlertDismissed:
+      state.numberFactAlert = nil
+      return .none
 
-  var body: some Reducer<State, Action> {
-    Reduce { state, action in
-      switch action {
-      case .decrementButtonTapped:
-        state.count -= 1
-        return .none
+    case .decrementButtonTapped:
+      state.count -= 1
+      return .none
 
-      case .incrementButtonTapped:
-        state.count += 1
-        return .none
+    case .incrementButtonTapped:
+      state.count += 1
+      return .none
 
-      case .numberFactButtonTapped:
-        return .run { [count = state.count] send in
-          let (data, _) = try await URLSession.shared.data(
-            from: URL(string: "http://numbersapi.com/\(count)/trivia")!
-          )
-          await send(
-            .numberFactResponse(String(decoding: data, as: UTF8.self))
-          )
-        }
-
-      case let .numberFactResponse(fact):
-        state.numberFact = fact
-        return .none
+    case .numberFactButtonTapped:
+      return .run { [count = state.count] send in
+        let (data, _) = try await URLSession.shared.data(
+          from: URL(string: "http://numbersapi.com/\(count)/trivia")!
+        )
+        await send(
+          .numberFactResponse(String(decoding: data, as: UTF8.self))
+        )
       }
+
+    case let .numberFactResponse(fact):
+      state.numberFactAlert = fact
+      return .none
     }
   }
 }
@@ -203,45 +197,55 @@ struct Feature {
 
 And then finally we define the view that displays the feature. It holds onto a `StoreOf<Feature>` 
 so that it can observe all changes to the state and re-render, and we can send all user actions to 
-the store so that state changes:
+the store so that state changes. We must also introduce a struct wrapper around the fact alert to 
+make it `Identifiable`, which the `.alert` view modifier requires:
 
 ```swift
 struct FeatureView: View {
   let store: StoreOf<Feature>
 
   var body: some View {
-    Form {
-      Section {
-        Text("\(store.count)")
-        Button("Decrement") { store.send(.decrementButtonTapped) }
-        Button("Increment") { store.send(.incrementButtonTapped) }
-      }
+    WithViewStore(self.store, observe: { $0 }) { viewStore in
+      VStack {
+        HStack {
+          Button("−") { viewStore.send(.decrementButtonTapped) }
+          Text("\(viewStore.count)")
+          Button("+") { viewStore.send(.incrementButtonTapped) }
+        }
 
-      Section {
-        Button("Number fact") { store.send(.numberFactButtonTapped) }
+        Button("Number fact") { viewStore.send(.numberFactButtonTapped) }
       }
-      
-      if let fact = store.numberFact {
-        Text(fact)
-      }
+      .alert(
+        item: viewStore.binding(
+          get: { $0.numberFactAlert.map(FactAlert.init(title:)) },
+          send: .factAlertDismissed
+        ),
+        content: { Alert(title: Text($0.title)) }
+      )
     }
   }
 }
+
+struct FactAlert: Identifiable {
+  var title: String
+  var id: String { self.title }
+}
 ```
 
-It is also straightforward to have a UIKit controller driven off of this store. You can observe
-state changes in the store in `viewDidLoad`, and then populate the UI components with data from
-the store. The code is a bit longer than the SwiftUI version, so we have collapsed it here:
+It is also straightforward to have a UIKit controller driven off of this store. You subscribe to the 
+store in `viewDidLoad` in order to update the UI and show alerts. The code is a bit longer than the 
+SwiftUI version, so we have collapsed it here:
 
 <details>
   <summary>Click to expand!</summary>
 
   ```swift
   class FeatureViewController: UIViewController {
-    let store: StoreOf<Feature>
+    let viewStore: ViewStoreOf<Feature>
+    var cancellables: Set<AnyCancellable> = []
 
     init(store: StoreOf<Feature>) {
-      self.store = store
+      self.viewStore = ViewStore(store, observe: { $0 })
       super.init(nibName: nil, bundle: nil)
     }
 
@@ -253,29 +257,42 @@ the store. The code is a bit longer than the SwiftUI version, so we have collaps
       super.viewDidLoad()
 
       let countLabel = UILabel()
-      let decrementButton = UIButton()
       let incrementButton = UIButton()
-      let factLabel = UILabel()
-      
+      let decrementButton = UIButton()
+      let factButton = UIButton()
+
       // Omitted: Add subviews and set up constraints...
-      
-      observe { [weak self] in
-        guard let self 
-        else { return }
-        
-        countLabel.text = "\(self.store.text)"
-        factLabel.text = self.store.numberFact
-      }
+
+      self.viewStore.publisher
+        .map { "\($0.count)" }
+        .assign(to: \.text, on: countLabel)
+        .store(in: &self.cancellables)
+
+      self.viewStore.publisher.numberFactAlert
+        .sink { [weak self] numberFactAlert in
+          let alertController = UIAlertController(
+            title: numberFactAlert, message: nil, preferredStyle: .alert
+          )
+          alertController.addAction(
+            UIAlertAction(
+              title: "Ok",
+              style: .default,
+              handler: { _ in self?.viewStore.send(.factAlertDismissed) }
+            )
+          )
+          self?.present(alertController, animated: true, completion: nil)
+        }
+        .store(in: &self.cancellables)
     }
 
     @objc private func incrementButtonTapped() {
-      self.store.send(.incrementButtonTapped)
+      self.viewStore.send(.incrementButtonTapped)
     }
     @objc private func decrementButtonTapped() {
-      self.store.send(.decrementButtonTapped)
+      self.viewStore.send(.decrementButtonTapped)
     }
     @objc private func factButtonTapped() {
-      self.store.send(.numberFactButtonTapped)
+      self.viewStore.send(.numberFactButtonTapped)
     }
   }
   ```
@@ -311,7 +328,6 @@ doing much additional work.
 
 ### Testing
 
-> [!Note] 
 > For more in-depth information on testing, see the dedicated [testing][testing-article] article. 
 
 To test use a `TestStore`, which can be created with the same information as the `Store`, but it 
@@ -342,14 +358,13 @@ await store.send(.decrementButtonTapped) {
 
 Further, if a step causes an effect to be executed, which feeds data back into the store, we must 
 assert on that. For example, if we simulate the user tapping on the fact button we expect to 
-receive a fact response back with the fact, which then causes the `numberFact` state to be 
-populated:
+receive a fact response back with the fact, which then causes the alert to show:
 
 ```swift
 await store.send(.numberFactButtonTapped)
 
-await store.receive(\.numberFactResponse) {
-  $0.numberFact = ???
+await store.receive(.numberFactResponse(???)) {
+  $0.numberFactAlert = ???
 }
 ```
 
@@ -364,8 +379,7 @@ dependency when running the application on a device, but use a mocked dependency
 do this by adding a property to the `Feature` reducer:
 
 ```swift
-@Reducer
-struct Feature {
+struct Feature: Reducer {
   let numberFact: (Int) async throws -> String
   // ...
 }
@@ -388,20 +402,18 @@ interacts with the real world API server:
 @main
 struct MyApp: App {
   var body: some Scene {
-    WindowGroup {
-      FeatureView(
-        store: Store(initialState: Feature.State()) {
-          Feature(
-            numberFact: { number in
-              let (data, _) = try await URLSession.shared.data(
-                from: URL(string: "http://numbersapi.com/\(number)")!
-              )
-              return String(decoding: data, as: UTF8.self)
-            }
-          )
-        }
-      )
-    }
+    FeatureView(
+      store: Store(initialState: Feature.State()) {
+        Feature(
+          numberFact: { number in
+            let (data, _) = try await URLSession.shared.data(
+              from: URL(string: "http://numbersapi.com/\(number)")!
+            )
+            return String(decoding: data, as: UTF8.self)
+          }
+        )
+      }
+    )
   }
 }
 ```
@@ -419,13 +431,18 @@ func testFeature() async {
 ```
 
 With that little bit of upfront work we can finish the test by simulating the user tapping on the 
-fact button, and then receiving the response from the dependency to present the fact:
+fact button, receiving the response from the dependency to trigger the alert, and then dismissing 
+the alert:
 
 ```swift
 await store.send(.numberFactButtonTapped)
 
-await store.receive(\.numberFactResponse) {
-  $0.numberFact = "0 is a good number Brent"
+await store.receive(.numberFactResponse("0 is a good number Brent")) {
+  $0.numberFactAlert = "0 is a good number Brent"
+}
+
+await store.send(.factAlertDismissed) {
+  $0.numberFactAlert = nil
 }
 ```
 
@@ -435,9 +452,7 @@ to `numberFact`, and explicitly passing it through all layers can get annoying. 
 you can follow to “register” dependencies with the library, making them instantly available to any 
 layer in the application.
 
-> [!Note] 
-> For more in-depth information on dependency management, see the dedicated
-> [dependencies][dependencies-article] article. 
+> For more in-depth information on dependency management, see the dedicated [dependencies][dependencies-article] article. 
 
 We can start by wrapping the number fact functionality in a new type:
 
@@ -475,8 +490,7 @@ With that little bit of upfront work done you can instantly start making use of 
 any feature by using the `@Dependency` property wrapper:
 
 ```diff
- @Reducer
- struct Feature {
+ struct Feature: Reducer {
 -  let numberFact: (Int) async throws -> String
 +  @Dependency(\.numberFact) var numberFact
    
@@ -498,13 +512,11 @@ This means the entry point to the application no longer needs to construct depen
 @main
 struct MyApp: App {
   var body: some Scene {
-    WindowGroup {
-      FeatureView(
-        store: Store(initialState: Feature.State()) {
-          Feature()
-        }
-      )
-    }
+    FeatureView(
+      store: Store(initialState: Feature.State()) {
+        Feature()
+      }
+    )
   }
 }
 ```
@@ -531,27 +543,30 @@ advanced usages.
 
 The documentation for releases and `main` are available here:
 
-* [`main`](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/)
-* [1.10.0](https://pointfreeco.github.io/swift-composable-architecture/1.10.0/documentation/composablearchitecture/) ([migration guide](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.10))
+* [`main`](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture)
+* [0.55.0](https://pointfreeco.github.io/swift-composable-architecture/0.55.0/documentation/composablearchitecture/)
 
 <details>
   <summary>
   Other versions
   </summary>
 
-  * [1.9.0](https://pointfreeco.github.io/swift-composable-architecture/1.9.0/documentation/composablearchitecture/) ([migration guide](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.9))
-  * [1.8.0](https://pointfreeco.github.io/swift-composable-architecture/1.8.0/documentation/composablearchitecture/) ([migration guide](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.8))
-  * [1.7.0](https://pointfreeco.github.io/swift-composable-architecture/1.7.0/documentation/composablearchitecture/) ([migration guide](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.7))
-  * [1.6.0](https://pointfreeco.github.io/swift-composable-architecture/1.6.0/documentation/composablearchitecture/) ([migration guide](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.6))
-  * [1.5.0](https://pointfreeco.github.io/swift-composable-architecture/1.5.0/documentation/composablearchitecture/) ([migration guide](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.5))
-  * [1.4.0](https://pointfreeco.github.io/swift-composable-architecture/1.4.0/documentation/composablearchitecture/) ([migration guide](https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4))
-  * [1.3.0](https://pointfreeco.github.io/swift-composable-architecture/1.3.0/documentation/composablearchitecture/)
-  * [1.2.0](https://pointfreeco.github.io/swift-composable-architecture/1.2.0/documentation/composablearchitecture/)
-  * [1.1.0](https://pointfreeco.github.io/swift-composable-architecture/1.1.0/documentation/composablearchitecture/)
-  * [1.0.0](https://pointfreeco.github.io/swift-composable-architecture/1.0.0/documentation/composablearchitecture/)
-  * [0.59.0](https://pointfreeco.github.io/swift-composable-architecture/0.59.0/documentation/composablearchitecture/)
-  * [0.58.0](https://pointfreeco.github.io/swift-composable-architecture/0.58.0/documentation/composablearchitecture/)
-  * [0.57.0](https://pointfreeco.github.io/swift-composable-architecture/0.57.0/documentation/composablearchitecture/)
+  * [0.54.0](https://pointfreeco.github.io/swift-composable-architecture/0.54.0/documentation/composablearchitecture/)
+  * [0.53.0](https://pointfreeco.github.io/swift-composable-architecture/0.53.0/documentation/composablearchitecture/)
+  * [0.52.0](https://pointfreeco.github.io/swift-composable-architecture/0.52.0/documentation/composablearchitecture/)
+  * [0.50.0](https://pointfreeco.github.io/swift-composable-architecture/0.50.0/documentation/composablearchitecture/)
+  * [0.49.0](https://pointfreeco.github.io/swift-composable-architecture/0.49.0/documentation/composablearchitecture/)
+  * [0.48.0](https://pointfreeco.github.io/swift-composable-architecture/0.48.0/documentation/composablearchitecture/)
+  * [0.47.0](https://pointfreeco.github.io/swift-composable-architecture/0.47.0/documentation/composablearchitecture/)
+  * [0.46.0](https://pointfreeco.github.io/swift-composable-architecture/0.46.0/documentation/composablearchitecture/)
+  * [0.45.0](https://pointfreeco.github.io/swift-composable-architecture/0.45.0/documentation/composablearchitecture/)
+  * [0.44.0](https://pointfreeco.github.io/swift-composable-architecture/0.44.0/documentation/composablearchitecture/)
+  * [0.43.0](https://pointfreeco.github.io/swift-composable-architecture/0.43.0/documentation/composablearchitecture/)
+  * [0.42.0](https://pointfreeco.github.io/swift-composable-architecture/0.42.0/documentation/composablearchitecture/)
+  * [0.41.0](https://pointfreeco.github.io/swift-composable-architecture/0.41.0/documentation/composablearchitecture/)
+  * [0.40.0](https://pointfreeco.github.io/swift-composable-architecture/0.40.0/documentation/composablearchitecture/)
+  * [0.39.0](https://pointfreeco.github.io/swift-composable-architecture/0.39.0/documentation/composablearchitecture/)
+  * [0.38.0](https://pointfreeco.github.io/swift-composable-architecture/0.38.0/documentation/composablearchitecture/)
 </details>
 
 <br>
@@ -563,7 +578,6 @@ comfortable with the library:
 * [Dependencies][dependencies-article]
 * [Testing][testing-article]
 * [Navigation][navigation-article]
-* [Sharing state][sharing-state-article]
 * [Performance][performance-article]
 * [Concurrency][concurrency-article]
 * [Bindings][bindings-article]
@@ -581,7 +595,7 @@ a particular problem, there are a number of places you can discuss with fellow
 
 You can add ComposableArchitecture to an Xcode project by adding it as a package dependency.
 
-  1. From the **File** menu, select **Add Package Dependencies...**
+  1. From the **File** menu, select **Add Packages...**
   2. Enter "https://github.com/pointfreeco/swift-composable-architecture" into the package 
      repository URL text field
   3. Depending on how your project is structured:
@@ -594,22 +608,6 @@ You can add ComposableArchitecture to an Xcode project by adding it as a package
         modules and consumes the static library in this fashion using the **tic-tac-toe** Swift 
         package.
 
-## Companion libraries
-
-The Composable Architecture is built with extensibility in mind, and there are a number of
-community-supported libraries available to enhance your applications:
-
-* [Composable Architecture Extras](https://github.com/Ryu0118/swift-composable-architecture-extras):
-  A companion library to the Composable Architecture.
-* [TCAComposer](https://github.com/mentalflux/tca-composer): A macro framework for generating
-  boiler-plate code in the Composable Architecture.
-* [TCACoordinators](https://github.com/johnpatrickmorgan/TCACoordinators): The coordinator pattern
-  in the Composable Architecture.
-
-If you'd like to contribute a library, please [open a
-PR](https://github.com/pointfreeco/swift-composable-architecture/edit/main/README.md) with a link
-to it!
-
 ## Translations
 
 The following translations of this README have been contributed by members of the community:
@@ -619,8 +617,8 @@ The following translations of this README have been contributed by members of th
 * [Hindi](https://gist.github.com/akashsoni01/b358ee0b3b747167964ef6946123c88d)
 * [Indonesian](https://gist.github.com/wendyliga/792ea9ac5cc887f59de70a9e39cc7343)
 * [Italian](https://gist.github.com/Bellaposa/5114e6d4d55fdb1388e8186886d48958)
-* [Japanese](https://gist.github.com/Achoo-kr/2d0712deb77f78b3379551ac7baea3e4)
-* [Korean](https://gist.github.com/Achoo-kr/5d8936d12e71028fcc4a7c5e078ca038)
+* [Japanese](https://gist.github.com/kalupas226/bdf577e4a7066377ea0a8aaeebcad428)
+* [Korean](https://gist.github.com/pilgwon/ea05e2207ab68bdd1f49dff97b293b17)
 * [Polish](https://gist.github.com/MarcelStarczyk/6b6153051f46912a665c32199f0d1d54)
 * [Portuguese](https://gist.github.com/SevioCorrea/2bbf337cd084a58c89f2f7f370626dc8)
 * [Russian](https://gist.github.com/artyom-ivanov/ed0417fd1f008f0492d3431c033175df)
@@ -647,7 +645,7 @@ to a [Gist](https://gist.github.com)!
 
     In other ways TCA is a little more lax than the other libraries. For example, Elm controls what 
     kinds of effects can be created via the `Cmd` type, but TCA allows an escape hatch to any kind 
-    of effect since `Effect` wraps around an async operation.
+    of effect since `Effect` conforms to the Combine `Publisher` protocol.
 
     And then there are certain things that TCA prioritizes highly that are not points of focus for 
     Redux, Elm, or most other libraries. For example, composition is very important aspect of TCA, 
@@ -706,7 +704,7 @@ This library is released under the MIT license. See [LICENSE](LICENSE) for detai
 [mbrandonw]: https://twitter.com/mbrandonw
 [stephencelis]: https://twitter.com/stephencelis
 [tca-episode-collection]: https://www.pointfree.co/collections/composable-architecture
-[tca-tour]: https://www.pointfree.co/collections/tours/composable-architecture-1-0
+[tca-tour]: https://www.pointfree.co/collections/tours/composable-architecture
 [gh-isowords]: https://github.com/pointfreeco/isowords
 [gh-discussions]: https://github.com/pointfreeco/swift-composable-architecture/discussions
 [swift-forum]: https://forums.swift.org/c/related-projects/swift-composable-architecture
@@ -717,5 +715,4 @@ This library is released under the MIT license. See [LICENSE](LICENSE) for detai
 [performance-article]: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/performance
 [concurrency-article]: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/swiftconcurrency
 [bindings-article]: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/bindings
-[sharing-state-article]: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/sharingstate
 [meet-tca]: https://pointfreeco.github.io/swift-composable-architecture/main/tutorials/meetcomposablearchitecture

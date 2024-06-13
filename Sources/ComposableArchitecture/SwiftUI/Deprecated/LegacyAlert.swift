@@ -12,9 +12,7 @@ extension View {
     macOS, introduced: 10.15, deprecated: 100000, message: "use `View.alert(store:) instead."
   )
   @available(tvOS, introduced: 13, deprecated: 100000, message: "use `View.alert(store:) instead.")
-  @available(
-    watchOS, introduced: 6, deprecated: 100000, message: "use `View.alert(store:) instead."
-  )
+  @available(watchOS, introduced: 6, deprecated: 100000, message: "use `View.alert(store:) instead.")
   public func legacyAlert<ButtonAction>(
     store: Store<PresentationState<AlertState<ButtonAction>>, PresentationAction<ButtonAction>>
   ) -> some View {
@@ -62,10 +60,10 @@ extension View {
     self.presentation(
       store: store, state: toDestinationState, action: fromDestinationAction
     ) { `self`, $item, _ in
-      let alertState = store.withState { $0.wrappedValue.flatMap(toDestinationState) }
+      let alertState = store.state.value.wrappedValue.flatMap(toDestinationState)
       self.alert(item: $item) { _ in
         Alert(alertState!) { action in
-          if let action {
+          if let action = action {
             store.send(.presented(fromDestinationAction(action)))
           } else {
             store.send(.dismiss)

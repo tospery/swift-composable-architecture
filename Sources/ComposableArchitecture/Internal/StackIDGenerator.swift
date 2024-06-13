@@ -11,8 +11,7 @@ extension DependencyValues {
   public let next: @Sendable () -> StackElementID
   public let peek: @Sendable () -> StackElementID
 
-  @_spi(Internals)
-  public func callAsFunction() -> StackElementID {
+  func callAsFunction() -> StackElementID {
     self.next()
   }
 

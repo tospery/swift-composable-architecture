@@ -36,8 +36,7 @@ To do this you can use the ``Reducer/dependency(_:_:)`` method to override a red
 dependency with another value:
 
 ```swift
-@Reducer
-struct Onboarding {
+struct Onboarding: Reducer {
   var body: some Reducer<State, Action> {
     Reduce { state, action in 
       // Additional onboarding logic

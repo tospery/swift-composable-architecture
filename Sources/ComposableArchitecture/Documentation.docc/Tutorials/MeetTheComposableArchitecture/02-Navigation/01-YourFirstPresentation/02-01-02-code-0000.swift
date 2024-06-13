@@ -1,10 +1,8 @@
-@Reducer
-struct ContactsFeature {
-  @ObservableState
+struct ContactsFeature: Reducer {
   struct State: Equatable {
     var contacts: IdentifiedArrayOf<Contact> = []
   }
-  enum Action {
+  enum Action: Equatable {
     case addButtonTapped
   }
   var body: some ReducerOf<Self> {

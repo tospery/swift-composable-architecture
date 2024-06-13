@@ -11,11 +11,11 @@ final class ContactsFeatureTests: XCTestCase {
     } withDependencies: {
       $0.uuid = .incrementing
     }
-    
+
     await store.send(.addButtonTapped) {
       $0.destination = .addContact(
         AddContactFeature.State(
-          contact: Contact(id: UUID(0), name: "")
+          Contact(id: UUID(0), name: "")
         )
       )
     }

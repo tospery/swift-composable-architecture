@@ -5,8 +5,7 @@ extension Reducer {
   /// perform its core logic _and_ the child's logic by using the `ifLet` operator:
   ///
   /// ```swift
-  /// @Reducer
-  /// struct Parent {
+  /// struct Parent: Reducer {
   ///   struct State {
   ///     var child: Child.State?
   ///     // ...
@@ -20,7 +19,7 @@ extension Reducer {
   ///     Reduce { state, action in
   ///       // Core logic for parent feature
   ///     }
-  ///     .ifLet(\.child, action: \.child) {
+  ///     .ifLet(\.child, action: /Action.child) {
   ///       Child()
   ///     }
   ///   }
@@ -40,7 +39,7 @@ extension Reducer {
   ///   * Automatically `nil`s out child state when an action is sent for alerts and confirmation
   ///     dialogs.
   ///
-  /// See ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` for a more advanced operator suited
+  /// See ``Reducer/ifLet(_:action:destination:fileID:line:)`` for a more advanced operator suited
   /// to navigation.
   ///
   /// - Parameters:
@@ -54,71 +53,7 @@ extension Reducer {
   @warn_unqualified_access
   public func ifLet<WrappedState, WrappedAction, Wrapped: Reducer>(
     _ toWrappedState: WritableKeyPath<State, WrappedState?>,
-    action toWrappedAction: CaseKeyPath<Action, WrappedAction>,
-    @ReducerBuilder<WrappedState, WrappedAction> then wrapped: () -> Wrapped,
-    fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) -> _IfLetReducer<Self, Wrapped>
-  where WrappedState == Wrapped.State, WrappedAction == Wrapped.Action {
-    .init(
-      parent: self,
-      child: wrapped(),
-      toChildState: toWrappedState,
-      toChildAction: AnyCasePath(toWrappedAction),
-      fileID: fileID,
-      line: line
-    )
-  }
-
-  /// A special overload of ``Reducer/ifLet(_:action:then:fileID:line:)-42kki`` for alerts
-  /// and confirmation dialogs that does not require a child reducer.
-  @inlinable
-  @warn_unqualified_access
-  public func ifLet<WrappedState: _EphemeralState, WrappedAction>(
-    _ toWrappedState: WritableKeyPath<State, WrappedState?>,
-    action toWrappedAction: CaseKeyPath<Action, WrappedAction>,
-    fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) -> _IfLetReducer<Self, EmptyReducer<WrappedState, WrappedAction>> {
-    .init(
-      parent: self,
-      child: EmptyReducer(),
-      toChildState: toWrappedState,
-      toChildAction: AnyCasePath(toWrappedAction),
-      fileID: fileID,
-      line: line
-    )
-  }
-
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @inlinable
-  @warn_unqualified_access
-  public func ifLet<WrappedState, WrappedAction, Wrapped: Reducer>(
-    _ toWrappedState: WritableKeyPath<State, WrappedState?>,
-    action toWrappedAction: AnyCasePath<Action, WrappedAction>,
+    action toWrappedAction: CasePath<Action, WrappedAction>,
     @ReducerBuilder<WrappedState, WrappedAction> then wrapped: () -> Wrapped,
     fileID: StaticString = #fileID,
     line: UInt = #line
@@ -134,35 +69,11 @@ extension Reducer {
     )
   }
 
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
   @inlinable
   @warn_unqualified_access
   public func ifLet<WrappedState: _EphemeralState, WrappedAction>(
     _ toWrappedState: WritableKeyPath<State, WrappedState?>,
-    action toWrappedAction: AnyCasePath<Action, WrappedAction>,
+    action toWrappedAction: CasePath<Action, WrappedAction>,
     fileID: StaticString = #fileID,
     line: UInt = #line
   ) -> _IfLetReducer<Self, EmptyReducer<WrappedState, WrappedAction>> {
@@ -188,7 +99,7 @@ public struct _IfLetReducer<Parent: Reducer, Child: Reducer>: Reducer {
   let toChildState: WritableKeyPath<Parent.State, Child.State?>
 
   @usableFromInline
-  let toChildAction: AnyCasePath<Parent.Action, Child.Action>
+  let toChildAction: CasePath<Parent.Action, Child.Action>
 
   @usableFromInline
   let fileID: StaticString
@@ -203,7 +114,7 @@ public struct _IfLetReducer<Parent: Reducer, Child: Reducer>: Reducer {
     parent: Parent,
     child: Child,
     toChildState: WritableKeyPath<Parent.State, Child.State?>,
-    toChildAction: AnyCasePath<Parent.Action, Child.Action>,
+    toChildAction: CasePath<Parent.Action, Child.Action>,
     fileID: StaticString,
     line: UInt
   ) {
@@ -256,13 +167,15 @@ public struct _IfLetReducer<Parent: Reducer, Child: Reducer>: Reducer {
     guard let childAction = self.toChildAction.extract(from: action)
     else { return .none }
     guard state[keyPath: self.toChildState] != nil else {
+      var actionDump = ""
+      customDump(action, to: &actionDump, indent: 4)
       runtimeWarn(
         """
         An "ifLet" at "\(self.fileID):\(self.line)" received a child action when child state was \
         "nil". …
 
           Action:
-        \(String(customDumping: action).indent(by: 4))
+        \(actionDump)
 
         This is generally considered an application logic error, and can happen for a few reasons:
 

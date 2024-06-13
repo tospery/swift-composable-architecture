@@ -5,38 +5,39 @@ private let readMe = """
   This demonstrates how to best handle alerts and confirmation dialogs in the Composable \
   Architecture.
 
-  The library comes with two types, `AlertState` and `ConfirmationDialogState`, which are data \
-  descriptions of the state and actions of an alert or dialog. These types can be constructed in \
-  reducers to control whether or not an alert or confirmation dialog is displayed, and \
-  corresponding view modifiers, `alert(_:)` and `confirmationDialog(_:)`, can be handed bindings \
-  to a store focused on an alert or dialog domain so that the alert or dialog can be displayed in \
-  the view.
+  Because the library demands that all data flow through the application in a single direction, we \
+  cannot leverage SwiftUI's two-way bindings because they can make changes to state without going \
+  through a reducer. This means we can't directly use the standard API to display alerts and sheets.
 
-  The benefit of using these types is that you can get full test coverage on how a user interacts \
-  with alerts and dialogs in your application
+  However, the library comes with two types, `AlertState` and `ConfirmationDialogState`, which can \
+  be constructed from reducers and control whether or not an alert or confirmation dialog is \
+  displayed. Further, it automatically handles sending actions when you tap their buttons, which \
+  allows you to properly handle their functionality in the reducer rather than in two-way bindings \
+  and action closures.
+
+  The benefit of doing this is that you can get full test coverage on how a user interacts with \
+  alerts and dialogs in your application
   """
 
-@Reducer
-struct AlertAndConfirmationDialog {
-  @ObservableState
+// MARK: - Feature domain
+
+struct AlertAndConfirmationDialog: Reducer {
   struct State: Equatable {
-    @Presents var alert: AlertState<Action.Alert>?
-    @Presents var confirmationDialog: ConfirmationDialogState<Action.ConfirmationDialog>?
+    @PresentationState var alert: AlertState<Action.Alert>?
+    @PresentationState var confirmationDialog: ConfirmationDialogState<Action.ConfirmationDialog>?
     var count = 0
   }
 
-  enum Action {
+  enum Action: Equatable {
     case alert(PresentationAction<Alert>)
     case alertButtonTapped
     case confirmationDialog(PresentationAction<ConfirmationDialog>)
     case confirmationDialogButtonTapped
 
-    @CasePathable
-    enum Alert {
+    enum Alert: Equatable {
       case incrementButtonTapped
     }
-    @CasePathable
-    enum ConfirmationDialog {
+    enum ConfirmationDialog: Equatable {
       case incrementButtonTapped
       case decrementButtonTapped
     }
@@ -96,36 +97,48 @@ struct AlertAndConfirmationDialog {
         return .none
       }
     }
-    .ifLet(\.$alert, action: \.alert)
-    .ifLet(\.$confirmationDialog, action: \.confirmationDialog)
+    .ifLet(\.$alert, action: /Action.alert)
+    .ifLet(\.$confirmationDialog, action: /Action.confirmationDialog)
   }
 }
+
+// MARK: - Feature view
 
 struct AlertAndConfirmationDialogView: View {
-  @Bindable var store: StoreOf<AlertAndConfirmationDialog>
+  let store: StoreOf<AlertAndConfirmationDialog>
 
   var body: some View {
-    Form {
-      Section {
-        AboutView(readMe: readMe)
-      }
+    WithViewStore(self.store, observe: { $0 }) { viewStore in
+      Form {
+        Section {
+          AboutView(readMe: readMe)
+        }
 
-      Text("Count: \(store.count)")
-      Button("Alert") { store.send(.alertButtonTapped) }
-      Button("Confirmation Dialog") { store.send(.confirmationDialogButtonTapped) }
+        Text("Count: \(viewStore.count)")
+        Button("Alert") { viewStore.send(.alertButtonTapped) }
+        Button("Confirmation Dialog") { viewStore.send(.confirmationDialogButtonTapped) }
+      }
     }
     .navigationTitle("Alerts & Dialogs")
-    .alert($store.scope(state: \.alert, action: \.alert))
-    .confirmationDialog($store.scope(state: \.confirmationDialog, action: \.confirmationDialog))
+    .alert(
+      store: self.store.scope(state: \.$alert, action: { .alert($0) })
+    )
+    .confirmationDialog(
+      store: self.store.scope(state: \.$confirmationDialog, action: { .confirmationDialog($0) })
+    )
   }
 }
 
-#Preview {
-  NavigationStack {
-    AlertAndConfirmationDialogView(
-      store: Store(initialState: AlertAndConfirmationDialog.State()) {
-        AlertAndConfirmationDialog()
-      }
-    )
+// MARK: - SwiftUI previews
+
+struct AlertAndConfirmationDialog_Previews: PreviewProvider {
+  static var previews: some View {
+    NavigationView {
+      AlertAndConfirmationDialogView(
+        store: Store(initialState: AlertAndConfirmationDialog.State()) {
+          AlertAndConfirmationDialog()
+        }
+      )
+    }
   }
 }

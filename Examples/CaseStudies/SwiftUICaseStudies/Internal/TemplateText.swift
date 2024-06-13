@@ -44,7 +44,7 @@ extension Text {
     }
     flushSegment()
 
-    self = segments.reduce(Text(verbatim: ""), +)
+    self = segments.reduce(Text(""), +)
   }
 }
 

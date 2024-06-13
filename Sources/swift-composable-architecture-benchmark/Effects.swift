@@ -20,8 +20,7 @@ let effectSuite = BenchmarkSuite(name: "Effects") {
   var didComplete = false
   $0.benchmark("Merged Effect.none (sink)") {
     doNotOptimizeAway(
-      _EffectPublisher(effect)
-        .sink(receiveCompletion: { _ in didComplete = true }, receiveValue: { _ in })
+      effect.sink(receiveCompletion: { _ in didComplete = true }, receiveValue: { _ in })
     )
   } tearDown: {
     precondition(didComplete)

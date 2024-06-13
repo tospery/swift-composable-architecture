@@ -1,32 +1,34 @@
-struct ContactsView: View {
-  @Bindable var store: StoreOf<ContactsFeature>
-  
+struct ContentView: View {
+  let store: StoreOf<ContactsFeature>
+
   var body: some View {
-    NavigationStack(path: $store.scope(state: \.path, action: \.path)) {
-      List {
-        ForEach(store.contacts) { contact in
-          NavigationLink(state: ContactDetailFeature.State(contact: contact)) {
-            HStack {
-              Text(contact.name)
-              Spacer()
-              Button {
-                store.send(.deleteButtonTapped(id: contact.id))
-              } label: {
-                Image(systemName: "trash")
-                  .foregroundColor(.red)
+    NavigationStackStore(self.store.scope(state: \.path, action: { .path($0) })) {
+      WithViewStore(self.store, observe: \.contacts) { viewStore in
+        List {
+          ForEach(viewStore.state) { contact in
+            NavigationLink(state: ContactDetailFeature.State(contact: contact)) {
+              HStack {
+                Text(contact.name)
+                Spacer()
+                Button {
+                  viewStore.send(.deleteButtonTapped(id: contact.id))
+                } label: {
+                  Image(systemName: "trash")
+                    .foregroundColor(.red)
+                }
               }
             }
+            .buttonStyle(.borderless)
           }
-          .buttonStyle(.borderless)
         }
-      }
-      .navigationTitle("Contacts")
-      .toolbar {
-        ToolbarItem {
-          Button {
-            store.send(.addButtonTapped)
-          } label: {
-            Image(systemName: "plus")
+        .navigationTitle("Contacts")
+        .toolbar {
+          ToolbarItem {
+            Button {
+              viewStore.send(.addButtonTapped)
+            } label: {
+              Image(systemName: "plus")
+            }
           }
         }
       }
@@ -34,12 +36,18 @@ struct ContactsView: View {
       ContactDetailView(store: store)
     }
     .sheet(
-      item: $store.scope(state: \.destination?.addContact, action: \.destination.addContact)
+      store: self.store.scope(state: \.$destination, action: { .destination($0) }),
+      state: /ContactsFeature.Destination.State.addContact,
+      action: ContactsFeature.Destination.Action.addContact
     ) { addContactStore in
       NavigationStack {
         AddContactView(store: addContactStore)
       }
     }
-    .alert($store.scope(state: \.destination?.alert, action: \.destination.alert))
+    .alert(
+      store: self.store.scope(state: \.$destination, action: { .destination($0) }),
+      state: /ContactsFeature.Destination.State.alert,
+      action: ContactsFeature.Destination.Action.alert
+    )
   }
 }

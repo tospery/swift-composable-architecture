@@ -4,10 +4,9 @@
 
 ### Building reducers
 
-- ``buildExpression(_:)-cp3q``
-- ``buildExpression(_:)-9uxku``
+- ``ReducerBuilderOf``
+- ``buildExpression(_:)``
 - ``buildBlock(_:)``
-- ``buildBlock()``
 - ``buildPartialBlock(first:)``
 - ``buildPartialBlock(accumulated:next:)``
 - ``buildOptional(_:)``
@@ -15,4 +14,4 @@
 - ``buildEither(second:)``
 - ``buildArray(_:)``
 - ``buildLimitedAvailability(_:)``
-- ``buildFinalResult(_:)``
+- ``buildBlock()``

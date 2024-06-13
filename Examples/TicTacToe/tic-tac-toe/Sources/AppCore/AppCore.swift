@@ -1,13 +1,25 @@
+import AuthenticationClient
 import ComposableArchitecture
+import Dispatch
 import LoginCore
 import NewGameCore
 
-@Reducer(state: .equatable)
-public enum TicTacToe {
-  case login(Login)
-  case newGame(NewGame)
+public struct TicTacToe: Reducer {
+  public enum State: Equatable {
+    case login(Login.State)
+    case newGame(NewGame.State)
 
-  public static var body: some ReducerOf<Self> {
+    public init() { self = .login(Login.State()) }
+  }
+
+  public enum Action: Equatable {
+    case login(Login.Action)
+    case newGame(NewGame.Action)
+  }
+
+  public init() {}
+
+  public var body: some Reducer<State, Action> {
     Reduce { state, action in
       switch action {
       case .login(.twoFactor(.presented(.twoFactorResponse(.success)))):
@@ -29,10 +41,10 @@ public enum TicTacToe {
         return .none
       }
     }
-    .ifCaseLet(\.login, action: \.login) {
+    .ifCaseLet(/State.login, action: /Action.login) {
       Login()
     }
-    .ifCaseLet(\.newGame, action: \.newGame) {
+    .ifCaseLet(/State.newGame, action: /Action.newGame) {
       NewGame()
     }
   }

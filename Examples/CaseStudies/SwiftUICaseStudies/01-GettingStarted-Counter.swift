@@ -9,50 +9,52 @@ private let readMe = """
   state of the application and any actions that can affect that state or the outside world.
   """
 
-@Reducer
-struct Counter {
-  @ObservableState
+// MARK: - Feature domain
+
+struct Counter: Reducer {
   struct State: Equatable {
     var count = 0
   }
 
-  enum Action {
+  enum Action: Equatable {
     case decrementButtonTapped
     case incrementButtonTapped
   }
 
-  var body: some Reducer<State, Action> {
-    Reduce { state, action in
-      switch action {
-      case .decrementButtonTapped:
-        state.count -= 1
-        return .none
-      case .incrementButtonTapped:
-        state.count += 1
-        return .none
-      }
+  func reduce(into state: inout State, action: Action) -> Effect<Action> {
+    switch action {
+    case .decrementButtonTapped:
+      state.count -= 1
+      return .none
+    case .incrementButtonTapped:
+      state.count += 1
+      return .none
     }
   }
 }
+
+// MARK: - Feature view
 
 struct CounterView: View {
   let store: StoreOf<Counter>
 
   var body: some View {
-    HStack {
-      Button {
-        store.send(.decrementButtonTapped)
-      } label: {
-        Image(systemName: "minus")
-      }
+    WithViewStore(self.store, observe: { $0 }) { viewStore in
+      HStack {
+        Button {
+          viewStore.send(.decrementButtonTapped)
+        } label: {
+          Image(systemName: "minus")
+        }
 
-      Text("\(store.count)")
-        .monospacedDigit()
+        Text("\(viewStore.count)")
+          .monospacedDigit()
 
-      Button {
-        store.send(.incrementButtonTapped)
-      } label: {
-        Image(systemName: "plus")
+        Button {
+          viewStore.send(.incrementButtonTapped)
+        } label: {
+          Image(systemName: "plus")
+        }
       }
     }
   }
@@ -68,7 +70,7 @@ struct CounterDemoView: View {
       }
 
       Section {
-        CounterView(store: store)
+        CounterView(store: self.store)
           .frame(maxWidth: .infinity)
       }
     }
@@ -77,12 +79,16 @@ struct CounterDemoView: View {
   }
 }
 
-#Preview {
-  NavigationStack {
-    CounterDemoView(
-      store: Store(initialState: Counter.State()) {
-        Counter()
-      }
-    )
+// MARK: - SwiftUI previews
+
+struct CounterView_Previews: PreviewProvider {
+  static var previews: some View {
+    NavigationView {
+      CounterDemoView(
+        store: Store(initialState: Counter.State()) {
+          Counter()
+        }
+      )
+    }
   }
 }

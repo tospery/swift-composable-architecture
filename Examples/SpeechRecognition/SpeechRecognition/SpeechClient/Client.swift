@@ -1,16 +1,14 @@
-import ComposableArchitecture
+import Dependencies
 import Speech
+import XCTestDynamicOverlay
 
-@DependencyClient
 struct SpeechClient {
   var finishTask: @Sendable () async -> Void
-  var requestAuthorization: @Sendable () async -> SFSpeechRecognizerAuthorizationStatus = {
-    .notDetermined
-  }
+  var requestAuthorization: @Sendable () async -> SFSpeechRecognizerAuthorizationStatus
   var startTask:
-    @Sendable (_ request: SFSpeechAudioBufferRecognitionRequest) async -> AsyncThrowingStream<
+    @Sendable (SFSpeechAudioBufferRecognitionRequest) async -> AsyncThrowingStream<
       SpeechRecognitionResult, Error
-    > = { _ in .finished() }
+    >
 
   enum Failure: Error, Equatable {
     case taskError
@@ -41,7 +39,10 @@ extension SpeechClient: TestDependencyKey {
             var text = ""
             while await isRecording.value {
               let word = finalText.prefix { $0 != " " }
-              try await Task.sleep(for: .milliseconds(word.count * 50 + .random(in: 0...200)))
+              try await Task.sleep(
+                nanoseconds: UInt64(word.count) * NSEC_PER_MSEC * 50
+                  + .random(in: 0...(NSEC_PER_MSEC * 200))
+              )
               finalText.removeFirst(word.count)
               if finalText.first == " " {
                 finalText.removeFirst()
@@ -64,7 +65,13 @@ extension SpeechClient: TestDependencyKey {
     )
   }
 
-  static let testValue = Self()
+  static let testValue = Self(
+    finishTask: unimplemented("\(Self.self).finishTask"),
+    requestAuthorization: unimplemented(
+      "\(Self.self).requestAuthorization", placeholder: .notDetermined
+    ),
+    startTask: unimplemented("\(Self.self).recognitionTask", placeholder: .never)
+  )
 }
 
 extension DependencyValues {

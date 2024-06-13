@@ -4,13 +4,12 @@
 
 ### Creating a reducer
 
-- ``init(_:)-6xl6k``
+- ``init(_:)-17fld``
 
 ### Type erased reducers
 
 - ``init(_:)-9kwa6``
 
-### Reduce conformance
+### Deprecations
 
-- ``Reducer/body-20w8t``
-- ``Reducer/reduce(into:action:)-1t2ri``
+- <doc:ReduceDeprecations>

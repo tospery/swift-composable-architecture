@@ -1,26 +1,31 @@
-struct ContactsView: View {
-  @Bindable var store: StoreOf<ContactsFeature>
-  
+struct ContentView: View {
+  let store: StoreOf<ContactsFeature>
+
   var body: some View {
     NavigationStack {
-      List {
-        ForEach(store.contacts) { contact in
-          Text(contact.name)
+      WithViewStore(self.store, observe: \.contacts) { viewStore in
+        List {
+          ForEach(viewStore.state) { contact in
+            Text(contact.name)
+          }
         }
-      }
-      .navigationTitle("Contacts")
-      .toolbar {
-        ToolbarItem {
-          Button {
-            store.send(.addButtonTapped)
-          } label: {
-            Image(systemName: "plus")
+        .navigationTitle("Contacts")
+        .toolbar {
+          ToolbarItem {
+            Button {
+              viewStore.send(.addButtonTapped)
+            } label: {
+              Image(systemName: "plus")
+            }
           }
         }
       }
     }
     .sheet(
-      item: $store.scope(state: \.addContact, action: \.addContact)
+      store: self.store.scope(
+        state: \.$addContact,
+        action: { .addContact($0) }
+      )
     ) { addContactStore in
       NavigationStack {
         AddContactView(store: addContactStore)

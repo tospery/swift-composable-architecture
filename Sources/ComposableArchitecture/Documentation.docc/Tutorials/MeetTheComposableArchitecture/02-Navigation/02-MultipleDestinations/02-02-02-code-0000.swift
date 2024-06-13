@@ -1,5 +1,4 @@
 extension ContactsFeature {
-  @Reducer
-  enum Destination {
+  struct Destination: Reducer {
   }
 }

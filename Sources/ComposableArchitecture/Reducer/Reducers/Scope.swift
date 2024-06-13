@@ -17,8 +17,7 @@
 /// For example, given the basic scaffolding of child reducer:
 ///
 /// ```swift
-/// @Reducer
-/// struct Child {
+/// struct Child: Reducer {
 ///   struct State {
 ///     // ...
 ///   }
@@ -30,12 +29,11 @@
 /// ```
 ///
 /// A parent reducer with a domain that holds onto the child domain can use
-/// ``init(state:action:child:)-88vdx`` to embed the child reducer in its
-/// ``Reducer/body-swift.property``:
+/// ``init(state:action:child:)`` to embed the child reducer in its
+/// ``Reducer/body-swift.property-8lumc``:
 ///
 /// ```swift
-/// @Reducer
-/// struct Parent {
+/// struct Parent: Reducer {
 ///   struct State {
 ///     var child: Child.State
 ///     // ...
@@ -47,7 +45,7 @@
 ///   }
 ///
 ///   var body: some Reducer<State, Action> {
-///     Scope(state: \.child, action: \.child) {
+///     Scope(state: \.child, action: /Action.child) {
 ///       Child()
 ///     }
 ///     Reduce { state, action in
@@ -60,15 +58,14 @@
 /// ## Enum state
 ///
 /// The ``Scope`` reducer also works when state is modeled as an enum, not just a struct. In that
-/// case you can use ``init(state:action:child:fileID:line:)-7yj7l`` to specify a case path that
+/// case you can use ``init(state:action:child:fileID:line:)`` to specify a case path that
 /// identifies the case of state you want to scope to.
 ///
 /// For example, if your state was modeled as an enum for unloaded/loading/loaded, you could
 /// scope to the loaded case to run a reduce on only that case:
 ///
 /// ```swift
-/// @Reducer
-/// struct Feature {
+/// struct Feature: Reducer {
 ///   enum State {
 ///     case unloaded
 ///     case loading
@@ -80,7 +77,7 @@
 ///   }
 ///
 ///   var body: some Reducer<State, Action> {
-///     Scope(state: \.loaded, action: \.child) {
+///     Scope(state: /State.loaded, action: /Action.child) {
 ///       Child()
 ///     }
 ///     Reduce { state, action in
@@ -97,12 +94,12 @@
 /// bugs, and so we show a runtime warning in that case, and cause test failures.
 ///
 /// For an alternative to using ``Scope`` with state case paths that enforces the order, check out
-/// the ``ifCaseLet(_:action:then:fileID:line:)-7zcm0`` operator.
+/// the ``ifCaseLet(_:action:then:fileID:line:)`` operator.
 public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   @usableFromInline
   enum StatePath {
     case casePath(
-      AnyCasePath<ParentState, Child.State>,
+      CasePath<ParentState, Child.State>,
       fileID: StaticString,
       line: UInt
     )
@@ -113,7 +110,7 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   let toChildState: StatePath
 
   @usableFromInline
-  let toChildAction: AnyCasePath<ParentAction, Child.Action>
+  let toChildAction: CasePath<ParentAction, Child.Action>
 
   @usableFromInline
   let child: Child
@@ -121,7 +118,7 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   @usableFromInline
   init(
     toChildState: StatePath,
-    toChildAction: AnyCasePath<ParentAction, Child.Action>,
+    toChildAction: CasePath<ParentAction, Child.Action>,
     child: Child
   ) {
     self.toChildState = toChildState
@@ -136,10 +133,10 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   ///
   /// ```swift
   /// var body: some Reducer<State, Action> {
-  ///   Scope(state: \.profile, action: \.profile) {
+  ///   Scope(state: \.profile, action: /Action.profile) {
   ///     Profile()
   ///   }
-  ///   Scope(state: \.settings, action: \.settings) {
+  ///   Scope(state: \.settings, action: /Action.settings) {
   ///     Settings()
   ///   }
   ///   // ...
@@ -153,12 +150,12 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   @inlinable
   public init<ChildState, ChildAction>(
     state toChildState: WritableKeyPath<ParentState, ChildState>,
-    action toChildAction: CaseKeyPath<ParentAction, ChildAction>,
+    action toChildAction: CasePath<ParentAction, ChildAction>,
     @ReducerBuilder<ChildState, ChildAction> child: () -> Child
   ) where ChildState == Child.State, ChildAction == Child.Action {
     self.init(
       toChildState: .keyPath(toChildState),
-      toChildAction: AnyCasePath(toChildAction),
+      toChildAction: toChildAction,
       child: child()
     )
   }
@@ -170,10 +167,10 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   ///
   /// ```swift
   /// var body: some Reducer<State, Action> {
-  ///   Scope(state: \.loggedIn, action: \.loggedIn) {
+  ///   Scope(state: /State.loggedIn, action: /Action.loggedIn) {
   ///     LoggedIn()
   ///   }
-  ///   Scope(state: \.loggedOut, action: \.loggedOut) {
+  ///   Scope(state: /State.loggedOut, action: /Action.loggedOut) {
   ///     LoggedOut()
   ///   }
   /// }
@@ -196,14 +193,14 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   /// >   // ...
   /// >   }
   /// > }
-  /// > Scope(state: \.loggedIn, action: \.loggedIn) {
+  /// > Scope(state: /State.loggedIn, action: /Action.loggedIn) {
   /// >   LoggedIn()  // ⚠️ Logged-in domain can't handle `quitButtonTapped`
   /// > }
   /// > ```
   /// >
   /// > If the parent domain contains additional logic for switching between cases of child state,
-  /// > prefer ``Reducer/ifCaseLet(_:action:then:fileID:line:)-3k4yb``, which better ensures that
-  /// > child logic runs _before_ any parent logic can replace child state:
+  /// > prefer ``Reducer/ifCaseLet(_:action:then:fileID:line:)``, which better ensures that child
+  /// > logic runs _before_ any parent logic can replace child state:
   /// >
   /// > ```swift
   /// > Reduce { state, action in
@@ -213,7 +210,7 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   /// >   // ...
   /// >   }
   /// > }
-  /// > .ifCaseLet(\.loggedIn, action: \.loggedIn) {
+  /// > .ifCaseLet(/State.loggedIn, action: /Action.loggedIn) {
   /// >   LoggedIn()  // ✅ Receives actions before its case can change
   /// > }
   /// > ```
@@ -224,84 +221,8 @@ public struct Scope<ParentState, ParentAction, Child: Reducer>: Reducer {
   ///   - child: A reducer that will be invoked with child actions against child state.
   @inlinable
   public init<ChildState, ChildAction>(
-    state toChildState: CaseKeyPath<ParentState, ChildState>,
-    action toChildAction: CaseKeyPath<ParentAction, ChildAction>,
-    @ReducerBuilder<ChildState, ChildAction> child: () -> Child,
-    fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) where ChildState == Child.State, ChildAction == Child.Action {
-    self.init(
-      toChildState: .casePath(AnyCasePath(toChildState), fileID: fileID, line: line),
-      toChildAction: AnyCasePath(toChildAction),
-      child: child()
-    )
-  }
-
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @inlinable
-  public init<ChildState, ChildAction>(
-    state toChildState: WritableKeyPath<ParentState, ChildState>,
-    action toChildAction: AnyCasePath<ParentAction, ChildAction>,
-    @ReducerBuilder<ChildState, ChildAction> child: () -> Child
-  ) where ChildState == Child.State, ChildAction == Child.Action {
-    self.init(
-      toChildState: .keyPath(toChildState),
-      toChildAction: toChildAction,
-      child: child()
-    )
-  }
-
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @inlinable
-  public init<ChildState, ChildAction>(
-    state toChildState: AnyCasePath<ParentState, ChildState>,
-    action toChildAction: AnyCasePath<ParentAction, ChildAction>,
+    state toChildState: CasePath<ParentState, ChildState>,
+    action toChildAction: CasePath<ParentAction, ChildAction>,
     @ReducerBuilder<ChildState, ChildAction> child: () -> Child,
     fileID: StaticString = #fileID,
     line: UInt = #line

@@ -7,13 +7,13 @@ import SwiftUI
 ///
 /// Typically you use this view by first modeling your features as having a parent feature that
 /// holds onto an optional piece of child state using the ``PresentationState``,
-/// ``PresentationAction`` and ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` tools (see
+/// ``PresentationAction`` and ``Reducer/ifLet(_:action:destination:fileID:line:)`` tools (see
 /// <doc:TreeBasedNavigation> for more information). Then in the view you can construct a
 /// `NavigationLinkStore` by passing a ``Store`` that is focused on the presentation domain:
 ///
 /// ```swift
 /// NavigationLinkStore(
-///   self.store.scope(state: \.$child, action: \.child)
+///   self.store.scope(state: \.$child, action: { .child($0) })
 /// ) {
 ///   viewStore.send(.linkTapped)
 /// } destination: { store in
@@ -71,19 +71,12 @@ public struct NavigationLinkStore<
       Destination,
     @ViewBuilder label: () -> Label
   ) {
-    let store = store.scope(
-      id: nil,
-      state: ToState(\.self),
-      action: { $0 },
-      isInvalid: { $0.wrappedValue.flatMap(toDestinationState) == nil }
-    )
+    let store = store.invalidate { $0.wrappedValue.flatMap(toDestinationState) == nil }
     self.store = store
     self.viewStore = ViewStore(
       store.scope(
-        id: nil,
-        state: ToState { $0.wrappedValue.flatMap(toDestinationState) != nil },
-        action: { $0 },
-        isInvalid: nil
+        state: { $0.wrappedValue.flatMap(toDestinationState) != nil },
+        action: { $0 }
       ),
       observe: { $0 }
     )
@@ -122,19 +115,12 @@ public struct NavigationLinkStore<
       Destination,
     @ViewBuilder label: () -> Label
   ) where DestinationState: Identifiable {
-    let store = store.scope(
-      id: nil,
-      state: ToState(\.self),
-      action: { $0 },
-      isInvalid: { $0.wrappedValue.flatMap(toDestinationState)?.id != id }
-    )
+    let store = store.invalidate { $0.wrappedValue.flatMap(toDestinationState)?.id != id }
     self.store = store
     self.viewStore = ViewStore(
       store.scope(
-        id: nil,
-        state: ToState { $0.wrappedValue.flatMap(toDestinationState)?.id == id },
-        action: { $0 },
-        isInvalid: nil
+        state: { $0.wrappedValue.flatMap(toDestinationState)?.id == id },
+        action: { $0 }
       ),
       observe: { $0 }
     )
@@ -160,12 +146,8 @@ public struct NavigationLinkStore<
     ) {
       IfLetStore(
         self.store.scope(
-          id: nil,
-          state: ToState(
-            returningLastNonNilValue { $0.wrappedValue.flatMap(self.toDestinationState) }
-          ),
-          action: { .presented(self.fromDestinationAction($0)) },
-          isInvalid: nil
+          state: returningLastNonNilValue { $0.wrappedValue.flatMap(self.toDestinationState) },
+          action: { .presented(self.fromDestinationAction($0)) }
         ),
         then: self.destination
       )

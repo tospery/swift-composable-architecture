@@ -1,19 +1,17 @@
 import ComposableArchitecture
 import XCTest
 
-@testable import CounterApp
-
 @MainActor
 final class CounterFeatureTests: XCTestCase {
   func testNumberFact() async {
     let store = TestStore(initialState: CounterFeature.State()) {
       CounterFeature()
     }
-    
+
     await store.send(.factButtonTapped) {
       $0.isLoading = true
     }
-    await store.receive(\.factResponse, timeout: .seconds(1)) {
+    await store.receive(.factResponse("???"), timeout: .seconds(1)) {
       $0.isLoading = false
       $0.fact = "???"
     }
@@ -21,7 +19,7 @@ final class CounterFeatureTests: XCTestCase {
     //    accessed from a test context:
     //
     //   Location:
-    //     CounterFeature.swift:70
+    //     TCATest/ContentView.swift:70
     //   Dependency:
     //     NumberFactClient
     //

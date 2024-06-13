@@ -2,17 +2,16 @@ import Combine
 import ComposableArchitecture
 import XCTest
 
+@MainActor
 final class ViewStoreTests: BaseTCATestCase {
   var cancellables: Set<AnyCancellable> = []
 
-  @MainActor
-  override func setUpWithError() throws {
-    try super.setUpWithError()
+  override func setUp() {
+    super.setUp()
     equalityChecks = 0
     subEqualityChecks = 0
   }
 
-  @MainActor
   func testPublisherFirehose() {
     let store = Store<Int, Void>(initialState: 0) {}
     let viewStore = ViewStore(store, observe: { $0 })
@@ -31,8 +30,6 @@ final class ViewStoreTests: BaseTCATestCase {
     XCTAssertEqual(emissionCount, 1)
   }
 
-  @available(*, deprecated)
-  @MainActor
   func testEqualityChecks() {
     let store = Store<State, Void>(initialState: State()) {}
 
@@ -71,7 +68,6 @@ final class ViewStoreTests: BaseTCATestCase {
     XCTAssertEqual(16, subEqualityChecks)
   }
 
-  @MainActor
   func testAccessViewStoreStateInPublisherSink() {
     let reducer = Reduce<Int, Void> { count, _ in
       count += 1
@@ -94,7 +90,6 @@ final class ViewStoreTests: BaseTCATestCase {
     XCTAssertEqual([0, 1, 2, 3], results)
   }
 
-  @MainActor
   func testWillSet() {
     let reducer = Reduce<Int, Void> { count, _ in
       count += 1
@@ -110,16 +105,13 @@ final class ViewStoreTests: BaseTCATestCase {
       .sink { _ in results.append(viewStore.state) }
       .store(in: &self.cancellables)
 
-    XCTAssertEqual([], results)
     viewStore.send(())
-    XCTAssertEqual([0], results)
     viewStore.send(())
-    XCTAssertEqual([0, 1], results)
     viewStore.send(())
+
     XCTAssertEqual([0, 1, 2], results)
   }
 
-  @MainActor
   func testPublisherOwnsViewStore() {
     let reducer = Reduce<Int, Void> { count, _ in
       count += 1
@@ -137,14 +129,12 @@ final class ViewStoreTests: BaseTCATestCase {
     XCTAssertEqual(results, [0, 1])
   }
 
-  @MainActor
   func testStorePublisherSubscriptionOrder() {
-    let store = Store<Int, Void>(initialState: 0) {
-      Reduce { state, _ in
-        state += 1
-        return .none
-      }
+    let reducer = Reduce<Int, Void> { count, _ in
+      count += 1
+      return .none
     }
+    let store = Store(initialState: 0) { reducer }
     let viewStore = ViewStore(store, observe: { $0 })
 
     var results: [Int] = []
@@ -163,26 +153,13 @@ final class ViewStoreTests: BaseTCATestCase {
 
     XCTAssertEqual(results, [0, 1, 2])
 
-    results = []
-    viewStore.send(())
-    XCTAssertEqual(results, [0, 1, 2])
-
-    results = []
-    viewStore.send(())
-    XCTAssertEqual(results, [0, 1, 2])
-
-    results = []
-    viewStore.send(())
-    XCTAssertEqual(results, [0, 1, 2])
-
-    results = []
-    for _ in 1...10 {
+    for _ in 0..<9 {
       viewStore.send(())
     }
+
     XCTAssertEqual(results, Array(repeating: [0, 1, 2], count: 10).flatMap { $0 })
   }
 
-  @MainActor
   func testSendWhile() async {
     enum Action {
       case response
@@ -195,7 +172,7 @@ final class ViewStoreTests: BaseTCATestCase {
         return .none
       case .tapped:
         state = true
-        return .run { send in await send(.response) }
+        return .task { .response }
       }
     }
 
@@ -207,7 +184,6 @@ final class ViewStoreTests: BaseTCATestCase {
     XCTAssertEqual(viewStore.state, false)
   }
 
-  @MainActor
   func testSuspend() {
     let expectation = self.expectation(description: "await")
     Task {
@@ -222,7 +198,7 @@ final class ViewStoreTests: BaseTCATestCase {
           return .none
         case .tapped:
           state = true
-          return .run { send in await send(.response) }
+          return .task { .response }
         }
       }
 
@@ -239,7 +215,6 @@ final class ViewStoreTests: BaseTCATestCase {
     self.wait(for: [expectation], timeout: 1)
   }
 
-  @MainActor
   func testAsyncSend() async throws {
     enum Action {
       case tap
@@ -249,8 +224,8 @@ final class ViewStoreTests: BaseTCATestCase {
       Reduce<Int, Action> { state, action in
         switch action {
         case .tap:
-          return .run { send in
-            await send(.response(42))
+          return .task {
+            return .response(42)
           }
         case let .response(value):
           state = value
@@ -266,7 +241,6 @@ final class ViewStoreTests: BaseTCATestCase {
     XCTAssertEqual(viewStore.state, 42)
   }
 
-  @MainActor
   func testAsyncSendCancellation() async throws {
     enum Action {
       case tap
@@ -276,9 +250,9 @@ final class ViewStoreTests: BaseTCATestCase {
       Reduce<Int, Action> { state, action in
         switch action {
         case .tap:
-          return .run { send in
+          return .task {
             try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-            await send(.response(42))
+            return .response(42)
           }
         case let .response(value):
           state = value

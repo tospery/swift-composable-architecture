@@ -5,60 +5,83 @@ import SwiftUI
 public struct GameView: View {
   let store: StoreOf<Game>
 
+  struct ViewState: Equatable, Sendable {
+    var board: [[String]]
+    var isGameDisabled: Bool
+    var isPlayAgainButtonVisible: Bool
+    var title: String
+
+    init(state: Game.State) {
+      self.board = state.board.map { $0.map { $0?.label ?? "" } }
+      self.isGameDisabled = state.board.hasWinner || state.board.isFilled
+      self.isPlayAgainButtonVisible = state.board.hasWinner || state.board.isFilled
+      self.title =
+        state.board.hasWinner
+        ? "Winner! Congrats \(state.currentPlayerName)!"
+        : state.board.isFilled
+          ? "Tied game!"
+          : "\(state.currentPlayerName), place your \(state.currentPlayer.label)"
+    }
+  }
+
   public init(store: StoreOf<Game>) {
     self.store = store
   }
 
   public var body: some View {
-    GeometryReader { proxy in
-      VStack(spacing: 0.0) {
-        VStack {
-          Text(store.title)
-            .font(.title)
+    WithViewStore(self.store, observe: ViewState.init) { viewStore in
+      GeometryReader { proxy in
+        VStack(spacing: 0.0) {
+          VStack {
+            Text(viewStore.title)
+              .font(.title)
 
-          if store.isPlayAgainButtonVisible {
-            Button("Play again?") {
-              store.send(.playAgainButtonTapped)
+            if viewStore.isPlayAgainButtonVisible {
+              Button("Play again?") {
+                viewStore.send(.playAgainButtonTapped)
+              }
+              .padding(.top, 12)
+              .font(.title)
             }
-            .padding(.top, 12)
-            .font(.title)
           }
-        }
-        .padding(.bottom, 48)
+          .padding(.bottom, 48)
 
-        VStack {
-          rowView(row: 0, proxy: proxy)
-          rowView(row: 1, proxy: proxy)
-          rowView(row: 2, proxy: proxy)
+          VStack {
+            self.rowView(row: 0, proxy: proxy, viewStore: viewStore)
+            self.rowView(row: 1, proxy: proxy, viewStore: viewStore)
+            self.rowView(row: 2, proxy: proxy, viewStore: viewStore)
+          }
+          .disabled(viewStore.isGameDisabled)
         }
-        .disabled(store.isGameDisabled)
+        .navigationTitle("Tic-tac-toe")
+        .navigationBarItems(leading: Button("Quit") { viewStore.send(.quitButtonTapped) })
+        .navigationBarBackButtonHidden(true)
       }
-      .navigationTitle("Tic-tac-toe")
-      .navigationBarItems(leading: Button("Quit") { store.send(.quitButtonTapped) })
-      .navigationBarBackButtonHidden(true)
     }
   }
 
   func rowView(
     row: Int,
-    proxy: GeometryProxy
+    proxy: GeometryProxy,
+    viewStore: ViewStore<ViewState, Game.Action>
   ) -> some View {
     HStack(spacing: 0.0) {
-      cellView(row: row, column: 0, proxy: proxy)
-      cellView(row: row, column: 1, proxy: proxy)
-      cellView(row: row, column: 2, proxy: proxy)
+      self.cellView(row: row, column: 0, proxy: proxy, viewStore: viewStore)
+      self.cellView(row: row, column: 1, proxy: proxy, viewStore: viewStore)
+      self.cellView(row: row, column: 2, proxy: proxy, viewStore: viewStore)
     }
   }
 
   func cellView(
     row: Int,
     column: Int,
-    proxy: GeometryProxy
+    proxy: GeometryProxy,
+    viewStore: ViewStore<ViewState, Game.Action>
   ) -> some View {
     Button {
-      store.send(.cellTapped(row: row, column: column))
+      viewStore.send(.cellTapped(row: row, column: column))
     } label: {
-      Text(store.rows[row][column])
+      Text(viewStore.board[row][column])
         .frame(width: proxy.size.width / 3, height: proxy.size.width / 3)
         .background(
           (row + column).isMultiple(of: 2)
@@ -69,25 +92,14 @@ public struct GameView: View {
   }
 }
 
-extension Game.State {
-  fileprivate var rows: [[String]] { self.board.map { $0.map { $0?.label ?? "" } } }
-  fileprivate var isGameDisabled: Bool { self.board.hasWinner || self.board.isFilled }
-  fileprivate var isPlayAgainButtonVisible: Bool { self.board.hasWinner || self.board.isFilled }
-  fileprivate var title: String {
-    self.board.hasWinner
-      ? "Winner! Congrats \(self.currentPlayerName)!"
-      : self.board.isFilled
-        ? "Tied game!"
-        : "\(self.currentPlayerName), place your \(self.currentPlayer.label)"
-  }
-}
-
-#Preview {
-  NavigationStack {
-    GameView(
-      store: Store(initialState: Game.State(oPlayerName: "Blob Jr.", xPlayerName: "Blob Sr.")) {
-        Game()
-      }
-    )
+struct Game_Previews: PreviewProvider {
+  static var previews: some View {
+    NavigationStack {
+      GameView(
+        store: Store(initialState: Game.State(oPlayerName: "Blob Jr.", xPlayerName: "Blob Sr.")) {
+          Game()
+        }
+      )
+    }
   }
 }

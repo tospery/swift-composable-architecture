@@ -1,7 +1,7 @@
 import Combine
 import SwiftUI
 
-extension Effect {
+extension EffectPublisher {
   /// Wraps the emission of each element with SwiftUI's `withAnimation`.
   ///
   /// ```swift
@@ -43,12 +43,11 @@ extension Effect {
         )
       )
     case let .run(priority, operation):
-      let uncheckedTransaction = UncheckedSendable(transaction)
       return Self(
         operation: .run(priority) { send in
           await operation(
             Send { value in
-              withTransaction(uncheckedTransaction.value) {
+              withTransaction(transaction) {
                 send(value)
               }
             }

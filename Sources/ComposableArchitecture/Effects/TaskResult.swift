@@ -17,7 +17,7 @@ import XCTestDynamicOverlay
 /// effect:
 ///
 /// ```swift
-/// enum Action: Equatable {
+/// enum FeatureAction: Equatable {
 ///   case factButtonTapped
 ///   case factResponse(TaskResult<String>)
 /// }
@@ -31,9 +31,9 @@ import XCTestDynamicOverlay
 /// }
 /// ```
 ///
-/// And finally you can use ``Effect/run(priority:operation:catch:fileID:line:)`` to construct an
-/// effect in the reducer that invokes the `numberFact` endpoint and wraps its response in a
-/// ``TaskResult`` by using its catching initializer, ``TaskResult/init(catching:)``:
+/// And finally you can use ``EffectPublisher/run(priority:operation:catch:fileID:line:)`` to
+/// construct an effect in the reducer that invokes the `numberFact` endpoint and wraps its response
+/// in a ``TaskResult`` by using its catching initializer, ``TaskResult/init(catching:)``:
 ///
 /// ```swift
 /// case .factButtonTapped:
@@ -45,7 +45,7 @@ import XCTestDynamicOverlay
 ///     )
 ///   }
 ///
-/// case let .factResponse(.success(fact)):
+/// case .factResponse(.success(fact)):
 ///   // do something with fact
 ///
 /// case .factResponse(.failure):
@@ -102,30 +102,6 @@ import XCTestDynamicOverlay
 ///   $0.isLoading = false
 /// }
 /// ```
-@available(
-  iOS,
-  deprecated: 9999,
-  message:
-    "Use 'Result', instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Moving-off-of-TaskResult"
-)
-@available(
-  macOS,
-  deprecated: 9999,
-  message:
-    "Use 'Result', instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Moving-off-of-TaskResult"
-)
-@available(
-  tvOS,
-  deprecated: 9999,
-  message:
-    "Use 'Result', instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Moving-off-of-TaskResult"
-)
-@available(
-  watchOS,
-  deprecated: 9999,
-  message:
-    "Use 'Result', instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Moving-off-of-TaskResult"
-)
 public enum TaskResult<Success: Sendable>: Sendable {
   /// A success, storing a `Success` value.
   case success(Success)
@@ -208,34 +184,6 @@ public enum TaskResult<Success: Sendable>: Sendable {
       return transform(value)
     case let .failure(error):
       return .failure(error)
-    }
-  }
-}
-
-extension TaskResult: CasePathable {
-  public static var allCasePaths: AllCasePaths {
-    AllCasePaths()
-  }
-
-  public struct AllCasePaths {
-    public var success: AnyCasePath<TaskResult, Success> {
-      AnyCasePath(
-        embed: { .success($0) },
-        extract: {
-          guard case let .success(value) = $0 else { return nil }
-          return value
-        }
-      )
-    }
-
-    public var failure: AnyCasePath<TaskResult, Error> {
-      AnyCasePath(
-        embed: { .failure($0) },
-        extract: {
-          guard case let .failure(value) = $0 else { return nil }
-          return value
-        }
-      )
     }
   }
 }

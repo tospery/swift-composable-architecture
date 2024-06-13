@@ -5,21 +5,21 @@ private let readMe = """
   This screen demonstrates how to show and hide views based on the presence of some optional child \
   state.
 
-  The parent state holds a `Counter.State?` value. When it is `nil` we will default to a plain \
-  text view. But when it is non-`nil` we will show a view fragment for a counter that operates on \
-  the non-optional counter state.
+  The parent state holds a `CounterState?` value. When it is `nil` we will default to a plain text \
+  view. But when it is non-`nil` we will show a view fragment for a counter that operates on the \
+  non-optional counter state.
 
   Tapping "Toggle counter state" will flip between the `nil` and non-`nil` counter states.
   """
 
-@Reducer
-struct OptionalBasics {
-  @ObservableState
+// MARK: - Feature domain
+
+struct OptionalBasics: Reducer {
   struct State: Equatable {
     var optionalCounter: Counter.State?
   }
 
-  enum Action {
+  enum Action: Equatable {
     case optionalCounter(Counter.Action)
     case toggleCounterButtonTapped
   }
@@ -37,60 +37,71 @@ struct OptionalBasics {
         return .none
       }
     }
-    .ifLet(\.optionalCounter, action: \.optionalCounter) {
+    .ifLet(\.optionalCounter, action: /Action.optionalCounter) {
       Counter()
     }
   }
 }
 
+// MARK: - Feature view
+
 struct OptionalBasicsView: View {
   let store: StoreOf<OptionalBasics>
 
   var body: some View {
-    Form {
-      Section {
-        AboutView(readMe: readMe)
-      }
+    WithViewStore(self.store, observe: { $0 }) { viewStore in
+      Form {
+        Section {
+          AboutView(readMe: readMe)
+        }
 
-      Button("Toggle counter state") {
-        store.send(.toggleCounterButtonTapped)
-      }
+        Button("Toggle counter state") {
+          viewStore.send(.toggleCounterButtonTapped)
+        }
 
-      if let store = store.scope(state: \.optionalCounter, action: \.optionalCounter) {
-        Text(template: "`Counter.State` is non-`nil`")
-        CounterView(store: store)
-          .buttonStyle(.borderless)
-          .frame(maxWidth: .infinity)
-      } else {
-        Text(template: "`Counter.State` is `nil`")
+        IfLetStore(
+          self.store.scope(
+            state: \.optionalCounter,
+            action: OptionalBasics.Action.optionalCounter
+          ),
+          then: { store in
+            Text(template: "`CounterState` is non-`nil`")
+            CounterView(store: store)
+              .buttonStyle(.borderless)
+              .frame(maxWidth: .infinity)
+          },
+          else: {
+            Text(template: "`CounterState` is `nil`")
+          }
+        )
       }
     }
     .navigationTitle("Optional state")
   }
 }
 
-#Preview {
-  NavigationStack {
-    OptionalBasicsView(
-      store: Store(initialState: OptionalBasics.State()) {
-        OptionalBasics()
-      }
-    )
-  }
-}
+// MARK: - SwiftUI previews
 
-#Preview("Deep-linked") {
-  NavigationStack {
-    OptionalBasicsView(
-      store: Store(
-        initialState: OptionalBasics.State(
-          optionalCounter: Counter.State(
-            count: 42
-          )
+struct OptionalBasicsView_Previews: PreviewProvider {
+  static var previews: some View {
+    Group {
+      NavigationView {
+        OptionalBasicsView(
+          store: Store(initialState: OptionalBasics.State()) {
+            OptionalBasics()
+          }
         )
-      ) {
-        OptionalBasics()
       }
-    )
+
+      NavigationView {
+        OptionalBasicsView(
+          store: Store(
+            initialState: OptionalBasics.State(optionalCounter: Counter.State(count: 42))
+          ) {
+            OptionalBasics()
+          }
+        )
+      }
+    }
   }
 }

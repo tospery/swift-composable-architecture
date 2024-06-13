@@ -1,7 +1,8 @@
 extension ContactsFeature {
-  @Reducer
-  enum Destination {
-    case addContact(AddContactFeature)
-    case alert(AlertState<ContactsFeature.Action.Alert>)
+  struct Destination: Reducer {
+    enum State: Equatable {
+      case addContact(AddContactFeature.State)
+      case alert(AlertState<ContactsFeature.Action.Alert>)
+    }
   }
 }
