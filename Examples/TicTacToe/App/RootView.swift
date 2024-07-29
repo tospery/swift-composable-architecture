@@ -22,40 +22,40 @@ private let readMe = """
   """
 
 enum GameType: Identifiable {
-  case swiftui
-  case uikit
-  var id: Self { self }
+    case swiftui
+    case uikit
+    var id: Self { self }
 }
 
 struct RootView: View {
-  let store = Store(initialState: TicTacToe.State.login(.init())) {
-    TicTacToe.body._printChanges()
-  }
-
-  @State var showGame: GameType?
-
-  var body: some View {
-    NavigationStack {
-      Form {
-        Text(readMe)
-
-        Section {
-          Button("SwiftUI version") { showGame = .swiftui }
-          Button("UIKit version") { showGame = .uikit }
-        }
-      }
-      .sheet(item: $showGame) { gameType in
-        if gameType == .swiftui {
-          AppView(store: store)
-        } else {
-          UIKitAppView(store: store)
-        }
-      }
-      .navigationTitle("Tic-Tac-Toe")
+    let store = Store(initialState: TicTacToe.State.login(.init())) {
+        TicTacToe.body._printChanges()
     }
-  }
+    
+    @State var showGame: GameType?
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Text(readMe)
+                
+                Section {
+                    Button("SwiftUI version") { showGame = .swiftui }
+                    Button("UIKit version") { showGame = .uikit }
+                }
+            }
+            .sheet(item: $showGame) { gameType in
+                if gameType == .swiftui {
+                    AppView(store: store)
+                } else {
+                    UIKitAppView(store: store)
+                }
+            }
+            .navigationTitle("Tic-Tac-Toe")
+        }
+    }
 }
 
 #Preview {
-  RootView()
+    RootView()
 }
