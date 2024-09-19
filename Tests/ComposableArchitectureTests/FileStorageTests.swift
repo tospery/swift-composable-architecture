@@ -10,9 +10,24 @@ final class FileStorageTests: XCTestCase {
       $0.defaultFileStorage = .inMemory(fileSystem: fileSystem, scheduler: .immediate)
     } operation: {
       @Shared(.fileStorage(.fileURL)) var users = [User]()
-      XCTAssertNoDifference(fileSystem.value, [.fileURL: Data()])
+      expectNoDifference(fileSystem.value, [.fileURL: Data()])
       users.append(.blob)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+    }
+  }
+
+  func testBasics_CustomDecodeEncodeClosures() {
+    let fileSystem = LockIsolated<[URL: Data]>([:])
+    withDependencies {
+      $0.defaultFileStorage = .inMemory(fileSystem: fileSystem, scheduler: .immediate)
+    } operation: {
+      @Shared(.utf8String) var string = ""
+      expectNoDifference(fileSystem.value, [.utf8StringURL: Data()])
+      string = "hello"
+      expectNoDifference(
+        fileSystem.value[.utf8StringURL].map { String(decoding: $0, as: UTF8.self) },
+        "hello"
+      )
     }
   }
 
@@ -26,25 +41,25 @@ final class FileStorageTests: XCTestCase {
       )
     } operation: {
       @Shared(.fileStorage(.fileURL)) var users = [User]()
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), nil)
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), nil)
 
       users.append(.blob)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
 
       users.append(.blobJr)
       testScheduler.advance(by: .seconds(1) - .milliseconds(1))
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
 
       users.append(.blobSr)
       testScheduler.advance(by: .milliseconds(1))
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr, .blobSr])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr, .blobSr])
 
       testScheduler.advance(by: .seconds(1))
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr, .blobSr])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr, .blobSr])
 
       testScheduler.advance(by: .seconds(0.5))
       users.append(.blobEsq)
-      try XCTAssertNoDifference(
+      try expectNoDifference(
         fileSystem.value.users(for: .fileURL),
         [
           .blob,
@@ -66,14 +81,14 @@ final class FileStorageTests: XCTestCase {
       )
     } operation: {
       @Shared(.fileStorage(.fileURL)) var users = [User]()
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), nil)
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), nil)
 
       users.append(.blob)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
 
       testScheduler.advance(by: .seconds(2))
       users.append(.blobJr)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr])
     }
   }
 
@@ -89,15 +104,15 @@ final class FileStorageTests: XCTestCase {
       )
     } operation: {
       @Shared(.fileStorage(.fileURL)) var users = [User]()
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), nil)
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), nil)
 
       users.append(.blob)
       users.append(.blobJr)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
 
       NotificationCenter.default.post(name: willResignNotificationName, object: nil)
       testScheduler.advance()
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr])
     }
   }
 
@@ -113,15 +128,15 @@ final class FileStorageTests: XCTestCase {
       )
     } operation: {
       @Shared(.fileStorage(.fileURL)) var users = [User]()
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), nil)
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), nil)
 
       users.append(.blob)
       users.append(.blobJr)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
 
       NotificationCenter.default.post(name: willTerminateNotificationName, object: nil)
       testScheduler.advance()
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob, .blobJr])
     }
   }
 
@@ -134,16 +149,15 @@ final class FileStorageTests: XCTestCase {
       @Shared(.fileStorage(.anotherFileURL)) var otherUsers = [User]()
 
       users.append(.blob)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
-      try XCTAssertNoDifference(fileSystem.value.users(for: .anotherFileURL), nil)
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .anotherFileURL), nil)
 
       otherUsers.append(.blobJr)
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
-      try XCTAssertNoDifference(fileSystem.value.users(for: .anotherFileURL), [.blobJr])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+      try expectNoDifference(fileSystem.value.users(for: .anotherFileURL), [.blobJr])
     }
   }
 
-  @MainActor
   func testLivePersistence() async throws {
     guard let willResignNotificationName else { return }
     try? FileManager.default.removeItem(at: .fileURL)
@@ -153,12 +167,12 @@ final class FileStorageTests: XCTestCase {
     } operation: {
       @Shared(.fileStorage(.fileURL)) var users = [User]()
 
-      users.append(.blob)
+      await $users.withLock { $0.append(.blob) }
       NotificationCenter.default
         .post(name: willResignNotificationName, object: nil)
       await Task.yield()
 
-      try XCTAssertNoDifference(
+      try expectNoDifference(
         JSONDecoder().decode([User].self, from: Data(contentsOf: .fileURL)),
         [.blob]
       )
@@ -176,7 +190,7 @@ final class FileStorageTests: XCTestCase {
         @Shared(.fileStorage(.fileURL)) var users = [User]()
         _ = users
         await Task.yield()
-        try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+        try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
       }
     }
   }
@@ -192,7 +206,7 @@ final class FileStorageTests: XCTestCase {
         @Shared(.fileStorage(.fileURL)) var users = [User]()
         _ = users
         await Task.yield()
-        try XCTAssertNoDifference(
+        try expectNoDifference(
           JSONDecoder().decode([User].self, from: Data(contentsOf: .fileURL)),
           [.blob]
         )
@@ -200,7 +214,6 @@ final class FileStorageTests: XCTestCase {
     }
   }
 
-  @MainActor
   func testWriteFile() async throws {
     try await withMainSerialExecutor {
       try? FileManager.default.removeItem(at: .fileURL)
@@ -211,17 +224,16 @@ final class FileStorageTests: XCTestCase {
       } operation: {
         @Shared(.fileStorage(.fileURL)) var users = [User]()
         await Task.yield()
-        XCTAssertNoDifference(users, [.blob])
+        expectNoDifference(users, [.blob])
 
         try JSONEncoder().encode([User.blobJr]).write(to: .fileURL)
         try await Task.sleep(nanoseconds: 10_000_000)
-        XCTAssertNoDifference(users, [.blobJr])
+        expectNoDifference(users, [.blobJr])
       }
     }
   }
 
-  @MainActor
-  func testWriteFileWhileDebouncing() throws {
+  func testWriteFileWhileThrottling() throws {
     let fileSystem = LockIsolated<[URL: Data]>([:])
     let scheduler = DispatchQueue.test
     let fileStorage = FileStorage.inMemory(
@@ -235,14 +247,15 @@ final class FileStorageTests: XCTestCase {
       @Shared(.fileStorage(.fileURL)) var users = [User]()
 
       users.append(.blob)
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), [.blob])
+
       try fileStorage.save(Data(), .fileURL)
       scheduler.run()
-      XCTAssertNoDifference(users, [])
-      try XCTAssertNoDifference(fileSystem.value.users(for: .fileURL), nil)
+      expectNoDifference(users, [])
+      try expectNoDifference(fileSystem.value.users(for: .fileURL), nil)
     }
   }
 
-  @MainActor
   func testDeleteFile() async throws {
     try await withMainSerialExecutor {
       try? FileManager.default.removeItem(at: .fileURL)
@@ -253,16 +266,15 @@ final class FileStorageTests: XCTestCase {
       } operation: {
         @Shared(.fileStorage(.fileURL)) var users = [User]()
         await Task.yield()
-        XCTAssertNoDifference(users, [.blob])
+        expectNoDifference(users, [.blob])
 
         try FileManager.default.removeItem(at: .fileURL)
         try await Task.sleep(nanoseconds: 1_000_000)
-        XCTAssertNoDifference(users, [])
+        expectNoDifference(users, [])
       }
     }
   }
 
-  @MainActor
   func testMoveFile() async throws {
     try await withMainSerialExecutor {
       try? FileManager.default.removeItem(at: .fileURL)
@@ -274,21 +286,20 @@ final class FileStorageTests: XCTestCase {
       } operation: {
         @Shared(.fileStorage(.fileURL)) var users = [User]()
         await Task.yield()
-        XCTAssertNoDifference(users, [.blob])
+        expectNoDifference(users, [.blob])
 
         try FileManager.default.moveItem(at: .fileURL, to: .anotherFileURL)
         try await Task.sleep(nanoseconds: 1_000_000)
-        XCTAssertNoDifference(users, [])
+        expectNoDifference(users, [])
 
         try FileManager.default.removeItem(at: .fileURL)
         try FileManager.default.moveItem(at: .anotherFileURL, to: .fileURL)
         try await Task.sleep(nanoseconds: 1_000_000)
-        XCTAssertNoDifference(users, [.blob])
+        expectNoDifference(users, [.blob])
       }
     }
   }
 
-  @MainActor
   func testDeleteFile_ThenWriteToFile() async throws {
     try await withMainSerialExecutor {
       try? FileManager.default.removeItem(at: .fileURL)
@@ -299,15 +310,15 @@ final class FileStorageTests: XCTestCase {
       } operation: {
         @Shared(.fileStorage(.fileURL)) var users = [User]()
         await Task.yield()
-        XCTAssertNoDifference(users, [.blob])
+        expectNoDifference(users, [.blob])
 
         try FileManager.default.removeItem(at: .fileURL)
         try await Task.sleep(nanoseconds: 1_000_000)
-        XCTAssertNoDifference(users, [])
+        expectNoDifference(users, [])
 
         try JSONEncoder().encode([User.blobJr]).write(to: .fileURL)
         try await Task.sleep(nanoseconds: 1_000_000)
-        XCTAssertNoDifference(users, [.blobJr])
+        expectNoDifference(users, [.blobJr])
       }
     }
   }
@@ -386,6 +397,91 @@ final class FileStorageTests: XCTestCase {
     XCTAssertEqual(shared1.wrappedValue.name, "Blob Jr")
     XCTAssertEqual(shared2.wrappedValue.name, "Blob Sr")
   }
+
+  func testCancelThrottleWhenFileIsDeleted() async throws {
+    try await withMainSerialExecutor {
+      try? FileManager.default.removeItem(at: .fileURL)
+
+      try await withDependencies {
+        $0.defaultFileStorage = .fileSystem
+      } operation: {
+        @Shared(.fileStorage(.fileURL)) var users = [User.blob]
+        await Task.yield()
+        expectNoDifference(users, [.blob])
+
+        $users.withLock { $0 = [.blobJr] }  // NB: Saved immediately
+        $users.withLock { $0 = [.blobSr] }  // NB: Throttled for 1 second
+        try FileManager.default.removeItem(at: .fileURL)
+        try await Task.sleep(nanoseconds: 1_200_000_000)
+        expectNoDifference(users, [.blob])
+        try XCTAssertEqual(Data(contentsOf: .fileURL), Data())
+      }
+    }
+  }
+
+  func testWritesFromManyThreads() async {
+    let fileSystem = LockIsolated<[URL: Data]>([:])
+    let fileStorage = FileStorage.inMemory(
+      fileSystem: fileSystem,
+      scheduler: DispatchQueue.main.eraseToAnyScheduler()
+    )
+
+    await withDependencies {
+      $0.defaultFileStorage = fileStorage
+    } operation: {
+      @Shared(.fileStorage(.fileURL)) var count = 0
+      let max = 10_000
+      await withTaskGroup(of: Void.self) { group in
+        for index in (1...max) {
+          group.addTask { [count = $count] in
+            try? await Task.sleep(for: .milliseconds(Int.random(in: 200...3_000)))
+            await count.withLock { $0 += index }
+          }
+        }
+      }
+
+      XCTAssertEqual(count, max * (max + 1) / 2)
+    }
+  }
+
+  @MainActor
+  func testUpdateFileSystemFromBackgroundThread() async throws {
+    await withDependencies {
+      $0.defaultFileStorage = .fileSystem
+    } operation: {
+      try? FileManager.default.removeItem(at: .fileURL)
+
+      @Shared(.fileStorage(.fileURL)) var count = 0
+
+      let publisherExpectation = expectation(description: "publisher")
+      let cancellable = $count.publisher.sink { _ in
+        XCTAssertTrue(Thread.isMainThread)
+        publisherExpectation.fulfill()
+      }
+      defer { _ = cancellable }
+
+      await withUnsafeContinuation { continuation in
+        DispatchQueue.global().async {
+          XCTAssertFalse(Thread.isMainThread)
+          try! Data("1".utf8).write(to: .fileURL)
+          continuation.resume()
+        }
+      }
+
+      await fulfillment(of: [publisherExpectation], timeout: 0.1)
+    }
+  }
+}
+
+extension PersistenceReaderKey
+where Self == FileStorageKey<String> {
+  fileprivate static var utf8String: Self {
+    .fileStorage(
+      .utf8StringURL,
+      decode: { data in String(decoding: data, as: UTF8.self) },
+      encode: { string in Data(string.utf8) }
+    )
+  }
 }
 
 extension URL {
@@ -395,6 +491,8 @@ extension URL {
     .appendingPathComponent("user.json")
   fileprivate static let anotherFileURL = Self(fileURLWithPath: NSTemporaryDirectory())
     .appendingPathComponent("another-file.json")
+  fileprivate static let utf8StringURL = Self(fileURLWithPath: NSTemporaryDirectory())
+    .appendingPathComponent("utf8-string.json")
 }
 
 private struct User: Codable, Equatable, Identifiable {

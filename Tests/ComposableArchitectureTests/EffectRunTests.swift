@@ -3,11 +3,10 @@ import ComposableArchitecture
 import XCTest
 
 final class EffectRunTests: BaseTCATestCase {
-  @MainActor
   func testRun() async {
     struct State: Equatable {}
     enum Action: Equatable { case tapped, response }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -21,11 +20,10 @@ final class EffectRunTests: BaseTCATestCase {
     await store.receive(.response)
   }
 
-  @MainActor
   func testRunCatch() async {
     struct State: Equatable {}
     enum Action: Equatable { case tapped, response }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -50,7 +48,7 @@ final class EffectRunTests: BaseTCATestCase {
       var line: UInt!
       XCTExpectFailure(nil, enabled: nil, strict: nil) {
         $0.compactDescription == """
-          An "Effect.run" returned from "\(#fileID):\(line+1)" threw an unhandled error. …
+          failed - An "Effect.run" returned from "\(#fileID):\(line+1)" threw an unhandled error. …
 
               EffectRunTests.Failure()
 
@@ -79,12 +77,11 @@ final class EffectRunTests: BaseTCATestCase {
     }
   #endif
 
-  @MainActor
   func testRunCancellation() async {
     enum CancelID { case response }
     struct State: Equatable {}
     enum Action: Equatable { case tapped, response }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -102,12 +99,11 @@ final class EffectRunTests: BaseTCATestCase {
     await store.send(.tapped).finish()
   }
 
-  @MainActor
   func testRunCancellationCatch() async {
     enum CancelID { case responseA }
     struct State: Equatable {}
     enum Action: Equatable { case tapped, responseA, responseB }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -131,7 +127,7 @@ final class EffectRunTests: BaseTCATestCase {
   func testRunEscapeFailure() async {
     XCTExpectFailure {
       $0.compactDescription == """
-        An action was sent from a completed effect:
+        failed - An action was sent from a completed effect:
 
           Action:
             EffectRunTests.Action.response

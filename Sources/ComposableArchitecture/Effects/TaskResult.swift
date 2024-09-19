@@ -1,12 +1,10 @@
-import XCTestDynamicOverlay
-
 /// A value that represents either a success or a failure. This type differs from Swift's `Result`
 /// type in that it uses only one generic for the success case, leaving the failure case as an
 /// untyped `Error`.
 ///
 /// This type is needed because Swift's concurrency tools can only express untyped errors, such as
 /// `async` functions and `AsyncSequence`, and so their output can realistically only be bridged to
-/// `Result<_, Error>`. However, `Result<_, Error>` is never `Equatable` since `Error` is not
+/// `Result<_, any Error>`. However, `Result<_, any Error>` is never `Equatable` since `Error` is not
 /// `Equatable`, and equatability is very important for testing in the Composable Architecture. By
 /// defining our own type we get the ability to recover equatability in most situations.
 ///
@@ -31,7 +29,7 @@ import XCTestDynamicOverlay
 /// }
 /// ```
 ///
-/// And finally you can use ``Effect/run(priority:operation:catch:fileID:line:)`` to construct an
+/// And finally you can use ``Effect/run(priority:operation:catch:fileID:filePath:line:column:)`` to construct an
 /// effect in the reducer that invokes the `numberFact` endpoint and wraps its response in a
 /// ``TaskResult`` by using its catching initializer, ``TaskResult/init(catching:)``:
 ///
@@ -131,7 +129,7 @@ public enum TaskResult<Success: Sendable>: Sendable {
   case success(Success)
 
   /// A failure, storing an error.
-  case failure(Error)
+  case failure(any Error)
 
   /// Creates a new task result by evaluating an async throwing closure, capturing the returned
   /// value as a success, or any thrown error as a failure.
@@ -228,7 +226,7 @@ extension TaskResult: CasePathable {
       )
     }
 
-    public var failure: AnyCasePath<TaskResult, Error> {
+    public var failure: AnyCasePath<TaskResult, any Error> {
       AnyCasePath(
         embed: { .failure($0) },
         extract: {
@@ -240,7 +238,7 @@ extension TaskResult: CasePathable {
   }
 }
 
-extension Result where Success: Sendable, Failure == Error {
+extension Result where Success: Sendable, Failure == any Error {
   /// Transforms a `TaskResult` into a `Result`.
   ///
   /// - Parameter result: A task result.
@@ -271,7 +269,7 @@ extension TaskResult: Equatable where Success: Equatable {
             let lhsType = type(of: lhs)
             if TaskResultDebugging.emitRuntimeWarnings, lhsType == type(of: rhs) {
               let lhsTypeName = typeName(lhsType)
-              runtimeWarn(
+              reportIssue(
                 """
                 "\(lhsTypeName)" is not equatable. …
 
@@ -307,7 +305,7 @@ extension TaskResult: Hashable where Success: Hashable {
         #if DEBUG
           if TaskResultDebugging.emitRuntimeWarnings {
             let errorType = typeName(type(of: error))
-            runtimeWarn(
+            reportIssue(
               """
               "\(errorType)" is not hashable. …
 

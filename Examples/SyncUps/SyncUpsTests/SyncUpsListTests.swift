@@ -24,7 +24,7 @@ final class SyncUpsListTests: XCTestCase {
 
     syncUp.title = "Engineering"
     await store.send(\.destination.add.binding.syncUp, syncUp) {
-      $0.destination?.add?.syncUp.title = "Engineering"
+      $0.destination?.modify(\.add) { $0.syncUp.title = "Engineering" }
     }
 
     await store.send(.confirmAddSyncUpButtonTapped) {
@@ -33,11 +33,10 @@ final class SyncUpsListTests: XCTestCase {
     }
   }
 
-  @MainActor
   func testAdd_ValidatedAttendees() async throws {
     @Dependency(\.uuid) var uuid
 
-    let store = TestStore(
+    let store = await TestStore(
       initialState: SyncUpsList.State(
         destination: .add(
           SyncUpForm.State(

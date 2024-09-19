@@ -4,7 +4,6 @@ import XCTest
 @testable import SyncUps
 
 final class RecordMeetingTests: XCTestCase {
-  @MainActor
   func testTimerFinishes() async {
     let clock = TestClock()
     let syncUp = SyncUp(
@@ -16,7 +15,7 @@ final class RecordMeetingTests: XCTestCase {
       duration: .seconds(4),
       title: "Morning Sync"
     )
-    let store = TestStore(
+    let store = await TestStore(
       initialState: RecordMeeting.State(syncUp: Shared(syncUp))
     ) {
       RecordMeeting()
@@ -24,6 +23,7 @@ final class RecordMeetingTests: XCTestCase {
       $0.continuousClock = clock
       $0.date.now = Date(timeIntervalSince1970: 1234567890)
       $0.uuid = .incrementing
+      $0.dismiss = DismissEffect {}
     }
 
     let onAppearTask = await store.send(.onAppear)

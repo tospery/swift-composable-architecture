@@ -4,58 +4,59 @@ import XCTest
 @testable import SyncUps
 
 final class AppFeatureTests: XCTestCase {
-  @MainActor
   func testDetailEdit() async throws {
-    var syncUp = SyncUp.mock
+    let syncUp = SyncUp.mock
     @Shared(.syncUps) var syncUps = [syncUp]
-    let store = TestStore(initialState: AppFeature.State()) {
+    let store = await TestStore(initialState: AppFeature.State()) {
       AppFeature()
     }
 
-    let sharedSyncUp = try XCTUnwrap($syncUps[id: syncUp.id])
+    let sharedSyncUp = try XCTUnwrap(Shared($syncUps[id: syncUp.id]))
 
     await store.send(\.path.push, (id: 0, .detail(SyncUpDetail.State(syncUp: sharedSyncUp)))) {
       $0.path[id: 0] = .detail(SyncUpDetail.State(syncUp: sharedSyncUp))
     }
 
     await store.send(\.path[id:0].detail.editButtonTapped) {
-      $0.path[id: 0]?.detail?.destination = .edit(
-        SyncUpForm.State(syncUp: syncUp)
-      )
+      $0.path[id: 0]?.modify(\.detail) { $0.destination = .edit(SyncUpForm.State(syncUp: syncUp)) }
     }
 
-    syncUp.title = "Blob"
-    await store.send(\.path[id:0].detail.destination.edit.binding.syncUp, syncUp) {
-      $0.path[id: 0]?.detail?.destination?.edit?.syncUp.title = "Blob"
+    var newSyncUp = syncUp
+    newSyncUp.title = "Blob"
+    await store.send(\.path[id:0].detail.destination.edit.binding.syncUp, newSyncUp) {
+      $0.path[id: 0]?.modify(\.detail) {
+        $0.destination?.modify(\.edit) { $0.syncUp.title = "Blob" }
+      }
     }
 
     await store.send(\.path[id:0].detail.doneEditingButtonTapped) {
-      $0.path[id: 0]?.detail?.destination = nil
-      $0.path[id: 0]?.detail?.syncUp.title = "Blob"
+      $0.path[id: 0]?.modify(\.detail) {
+        $0.destination = nil
+        $0.syncUp.title = "Blob"
+      }
     }
     .finish()
   }
 
-  @MainActor
   func testDelete() async throws {
     let syncUp = SyncUp.mock
     @Shared(.syncUps) var syncUps = [syncUp]
-    let store = TestStore(initialState: AppFeature.State()) {
+    let store = await TestStore(initialState: AppFeature.State()) {
       AppFeature()
     }
 
-    let sharedSyncUp = try XCTUnwrap($syncUps[id: syncUp.id])
+    let sharedSyncUp = try XCTUnwrap(Shared($syncUps[id: syncUp.id]))
 
     await store.send(\.path.push, (id: 0, .detail(SyncUpDetail.State(syncUp: sharedSyncUp)))) {
       $0.path[id: 0] = .detail(SyncUpDetail.State(syncUp: sharedSyncUp))
     }
 
     await store.send(\.path[id:0].detail.deleteButtonTapped) {
-      $0.path[id: 0]?.detail?.destination = .alert(.deleteSyncUp)
+      $0.path[id: 0]?.modify(\.detail) { $0.destination = .alert(.deleteSyncUp) }
     }
 
     await store.send(\.path[id:0].detail.destination.alert.confirmDeletion) {
-      $0.path[id: 0, case: \.detail]?.destination = nil
+      $0.path[id: 0]?.modify(\.detail) { $0.destination = nil }
       $0.syncUpsList.syncUps = []
     }
 
@@ -102,20 +103,23 @@ final class AppFeatureTests: XCTestCase {
       }
       $0.uuid = .incrementing
     }
-    store.exhaustivity = .off
 
-    await store.send(\.path[id:1].record.onTask)
-    await store.receive(\.path.popFrom) {
-      XCTAssertEqual($0.path.count, 1)
+    await store.withExhaustivity(.off) {
+      await store.send(\.path[id:1].record.onTask)
+      await store.receive(\.path.popFrom) {
+        XCTAssertEqual($0.path.count, 1)
+      }
     }
-    store.assert {
-      $0.path[id: 0]?.detail?.syncUp.meetings = [
-        Meeting(
-          id: Meeting.ID(UUID(0)),
-          date: Date(timeIntervalSince1970: 1_234_567_890),
-          transcript: "I completed the project"
-        )
-      ]
+    await store.assert {
+      $0.path[id: 0]?.modify(\.detail) {
+        $0.syncUp.meetings = [
+          Meeting(
+            id: Meeting.ID(UUID(0)),
+            date: Date(timeIntervalSince1970: 1_234_567_890),
+            transcript: "I completed the project"
+          )
+        ]
+      }
     }
   }
 }

@@ -1,7 +1,6 @@
 import Combine
 import Foundation
 import SwiftUI
-import XCTestDynamicOverlay
 
 public struct Effect<Action> {
   @usableFromInline
@@ -69,10 +68,10 @@ extension Effect {
   ///
   /// See ``Send`` for more information on how to use the `send` argument passed to `run`'s closure.
   ///
-  /// The closure provided to ``run(priority:operation:catch:fileID:line:)`` is allowed to
-  /// throw, but any non-cancellation errors thrown will cause a runtime warning when run in the
-  /// simulator or on a device, and will cause a test failure in tests. To catch non-cancellation
-  /// errors use the `catch` trailing closure.
+  /// The closure provided to ``run(priority:operation:catch:fileID:filePath:line:column:)`` is
+  /// allowed to throw, but any non-cancellation errors thrown will cause a runtime warning when run
+  /// in the simulator or on a device, and will cause a test failure in tests. To catch
+  /// non-cancellation errors use the `catch` trailing closure.
   ///
   /// - Parameters:
   ///   - priority: Priority of the underlying task. If `nil`, the priority will come from
@@ -84,9 +83,11 @@ extension Effect {
   public static func run(
     priority: TaskPriority? = nil,
     operation: @escaping @Sendable (_ send: Send<Action>) async throws -> Void,
-    catch handler: (@Sendable (_ error: Error, _ send: Send<Action>) async -> Void)? = nil,
+    catch handler: (@Sendable (_ error: any Error, _ send: Send<Action>) async -> Void)? = nil,
     fileID: StaticString = #fileID,
-    line: UInt = #line
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) -> Self {
     withEscapedDependencies { escaped in
       Self(
@@ -98,7 +99,7 @@ extension Effect {
               return
             } catch {
               guard let handler else {
-                runtimeWarn(
+                reportIssue(
                   """
                   An "Effect.run" returned from "\(fileID):\(line)" threw an unhandled error. …
 
@@ -106,7 +107,11 @@ extension Effect {
 
                   All non-cancellation errors must be explicitly handled via the "catch" parameter \
                   on "Effect.run", or via a "do" block.
-                  """
+                  """,
+                  fileID: fileID,
+                  filePath: filePath,
+                  line: line,
+                  column: column
                 )
                 return
               }
@@ -148,29 +153,29 @@ extension Effect {
 }
 
 /// A type that can send actions back into the system when used from
-/// ``Effect/run(priority:operation:catch:fileID:line:)``.
+/// ``Effect/run(priority:operation:catch:fileID:filePath:line:column:)``.
 ///
 /// This type implements [`callAsFunction`][callAsFunction] so that you invoke it as a function
 /// rather than calling methods on it:
 ///
 /// ```swift
 /// return .run { send in
-///   send(.started)
-///   defer { send(.finished) }
+///   await send(.started)
 ///   for await event in self.events {
 ///     send(.event(event))
 ///   }
+///   await send(.finished)
 /// }
 /// ```
 ///
-/// You can also send actions with animation:
+/// You can also send actions with animation and transaction:
 ///
 /// ```swift
-/// send(.started, animation: .spring())
-/// defer { send(.finished, animation: .default) }
+/// await send(.started, animation: .spring())
+/// await send(.finished, transaction: .init(animation: .default))
 /// ```
 ///
-/// See ``Effect/run(priority:operation:catch:fileID:line:)`` for more information on how to
+/// See ``Effect/run(priority:operation:catch:fileID:filePath:line:column:)`` for more information on how to
 /// use this value to construct effects that can emit any number of times in an asynchronous
 /// context.
 ///
@@ -232,7 +237,7 @@ extension Effect {
   /// - Parameter effects: A sequence of effects.
   /// - Returns: A new effect
   @inlinable
-  public static func merge<S: Sequence>(_ effects: S) -> Self where S.Element == Self {
+  public static func merge(_ effects: some Sequence<Self>) -> Self {
     effects.reduce(.none) { $0.merge(with: $1) }
   }
 
@@ -289,7 +294,7 @@ extension Effect {
   /// - Parameter effects: A collection of effects.
   /// - Returns: A new effect
   @inlinable
-  public static func concatenate<C: Collection>(_ effects: C) -> Self where C.Element == Self {
+  public static func concatenate(_ effects: some Collection<Self>) -> Self {
     effects.reduce(.none) { $0.concatenate(with: $1) }
   }
 
@@ -341,7 +346,7 @@ extension Effect {
   /// - Returns: A publisher that uses the provided closure to map elements from the upstream effect
   ///   to new elements that it then publishes.
   @inlinable
-  public func map<T>(_ transform: @escaping (Action) -> T) -> Effect<T> {
+  public func map<T>(_ transform: @escaping @Sendable (Action) -> T) -> Effect<T> {
     switch self.operation {
     case .none:
       return .none

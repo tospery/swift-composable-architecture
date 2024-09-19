@@ -6,7 +6,7 @@
   final class ReducerMacroTests: XCTestCase {
     override func invokeTest() {
       withMacroTesting(
-        // isRecording: true,
+        // record: .failed,
         macros: [ReducerMacro.self]
       ) {
         super.invokeTest()
@@ -241,12 +241,12 @@
             enum CaseScope {
 
             }
-
             static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
                 switch store.state {
 
                 }
-            }}
+            }
+        }
 
         extension Destination: ComposableArchitecture.CaseReducer, ComposableArchitecture.Reducer {
         }
@@ -298,11 +298,11 @@
             case activity(Activity.Action)
             case timeline(Timeline.Action)
             case tweet(Tweet.Action)
-            case alert(AlertState<Alert> .Action)
+            case alert(Alert)
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Activity>, ComposableArchitecture.Scope<Self.State, Self.Action, Timeline>>, ComposableArchitecture.Scope<Self.State, Self.Action, Tweet>> {
+          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>._Sequence<ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Activity>, ComposableArchitecture.Scope<Self.State, Self.Action, Timeline>>, ComposableArchitecture.Scope<Self.State, Self.Action, Tweet>> {
             ComposableArchitecture.Scope(state: \Self.State.Cases.activity, action: \Self.Action.Cases.activity) {
               Activity()
             }
@@ -320,7 +320,6 @@
             case tweet(ComposableArchitecture.StoreOf<Tweet>)
             case alert(AlertState<Alert>)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .activity:
@@ -385,7 +384,6 @@
             case timeline(ComposableArchitecture.StoreOf<Timeline>)
             case meeting(ComposableArchitecture.StoreOf<Meeting>)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .timeline:
@@ -434,7 +432,6 @@
             enum CaseScope {
 
             }
-
             static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
                 switch store.state {
 
@@ -572,7 +569,7 @@
 
           @CasePathable
           enum Action {
-            case alert(AlertState<Never> .Action)
+            case alert(Never)
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
@@ -583,7 +580,6 @@
           enum CaseScope {
             case alert(AlertState<Never>)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case let .alert(v0):
@@ -629,7 +625,7 @@
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Activity>, ComposableArchitecture.Scope<Self.State, Self.Action, Timeline>> {
+          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Activity>, ComposableArchitecture.Scope<Self.State, Self.Action, Timeline>> {
             ComposableArchitecture.Scope(state: \Self.State.Cases.activity, action: \Self.Action.Cases.activity) {
               Activity()
             }
@@ -642,7 +638,6 @@
             case activity(ComposableArchitecture.StoreOf<Activity>)
             case timeline(ComposableArchitecture.StoreOf<Timeline>)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .activity:
@@ -702,7 +697,6 @@
             case timeline(ComposableArchitecture.StoreOf<Timeline>)
             case meeting(Meeting)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .timeline:
@@ -751,8 +745,8 @@
 
           @CasePathable
           enum Action {
-            case alert(AlertState<Alert> .Action)
-            case dialog(ConfirmationDialogState<Dialog> .Action)
+            case alert(Alert)
+            case dialog(Dialog)
             case meeting(Swift.Never)
           }
 
@@ -766,7 +760,6 @@
             case dialog(ConfirmationDialogState<Dialog>)
             case meeting(Meeting, syncUp: SyncUp)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case let .alert(v0):
@@ -820,7 +813,7 @@
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Counter>, ComposableArchitecture.Scope<Self.State, Self.Action, Counter>>, ComposableArchitecture.Scope<Self.State, Self.Action, Counter>> {
+          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>._Sequence<ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Counter>, ComposableArchitecture.Scope<Self.State, Self.Action, Counter>>, ComposableArchitecture.Scope<Self.State, Self.Action, Counter>> {
             ComposableArchitecture.Scope(state: \Self.State.Cases.drillDown, action: \Self.Action.Cases.drillDown) {
               Counter()
             }
@@ -837,7 +830,6 @@
             case popover(ComposableArchitecture.StoreOf<Counter>)
             case sheet(ComposableArchitecture.StoreOf<Counter>)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .drillDown:
@@ -892,7 +884,6 @@
           enum CaseScope {
             case feature(ComposableArchitecture.StoreOf<Nested.Feature>)
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .feature:
@@ -1098,7 +1089,8 @@
             enum Action: Equatable, Hashable, Sendable {
             }
 
-            let body = ComposableArchitecture.EmptyReducer<State, Action>()}
+            let body = ComposableArchitecture.EmptyReducer<State, Action>()
+        }
 
         @available(iOS, unavailable) extension Feature: ComposableArchitecture.Reducer {
         }
@@ -1183,7 +1175,7 @@
             case child(ChildFeature.Action)
             #if os(macOS)
             case mac(MacFeature.Action)
-            case macAlert(AlertState<MacAlert> .Action)
+            case macAlert(MacAlert)
             #elseif os(iOS)
             case phone(PhoneFeature.Action)
             #else
@@ -1194,7 +1186,7 @@
             #if DEBUG
             #if INNER
             case inner(InnerFeature.Action)
-            case innerDialog(ConfirmationDialogState<InnerDialog> .Action)
+            case innerDialog(InnerDialog)
             #endif
             #endif
 
@@ -1254,7 +1246,6 @@
             #endif
 
           }
-
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .child:

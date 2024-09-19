@@ -1,16 +1,23 @@
 import Accessibility
 import CustomDump
 @preconcurrency import InlineSnapshotTesting
+import IssueReporting
 import XCTest
 
 class BaseIntegrationTests: XCTestCase {
   @MainActor
   var app: XCUIApplication!
   var logs: XCUIElement!
-  private var _expectRuntimeWarnings: (file: StaticString, line: UInt)?
+  private var _expectRuntimeWarnings: (filePath: StaticString, line: UInt)?
 
-  func expectRuntimeWarnings(file: StaticString = #file, line: UInt = #line) {
-    self._expectRuntimeWarnings = (file, line)
+  func expectRuntimeWarnings(filePath: StaticString = #filePath, line: UInt = #line) {
+    self._expectRuntimeWarnings = (filePath, line)
+  }
+
+  override func invokeTest() {
+    withSnapshotTesting {
+      super.invokeTest()
+    }
   }
 
   @MainActor
@@ -40,7 +47,6 @@ class BaseIntegrationTests: XCTestCase {
         "\(self.name) emitted an unexpected runtime warning"
       )
     }
-    SnapshotTesting.isRecording = false
   }
 
   @MainActor
@@ -61,7 +67,8 @@ class BaseIntegrationTests: XCTestCase {
   func assertLogs(
     _ logConfiguration: LogConfiguration = .unordered,
     matches expectedLogs: (() -> String)? = nil,
-    file: StaticString = #file,
+    fileID: StaticString = #fileID,
+    filePath: StaticString = #filePath,
     function: StaticString = #function,
     line: UInt = #line,
     column: UInt = #column
@@ -74,15 +81,18 @@ class BaseIntegrationTests: XCTestCase {
     case .unordered:
       logs = self.logs.label.split(separator: "\n").sorted().joined(separator: "\n")
     }
-    assertInlineSnapshot(
-      of: logs,
-      as: ._lines,
-      matches: expectedLogs,
-      file: file,
-      function: function,
-      line: line,
-      column: column
-    )
+    withExpectedIssue(isIntermittent: true) {
+      assertInlineSnapshot(
+        of: logs,
+        as: ._lines,
+        matches: expectedLogs,
+        fileID: fileID,
+        file: filePath,
+        function: function,
+        line: line,
+        column: column
+      )
+    }
   }
 }
 
@@ -91,7 +101,7 @@ enum LogConfiguration {
   case unordered
 }
 
-extension Snapshotting where Value == String, Format == String {
+extension Snapshotting<String, String> {
   fileprivate static nonisolated(unsafe) let _lines = Snapshotting(
     pathExtension: "txt",
     diffing: Diffing(

@@ -4,7 +4,7 @@ import Combine
 /// A property wrapper for state that can be presented.
 ///
 /// Use this property wrapper for modeling a feature's domain that needs to present a child feature
-/// using ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at``.
+/// using ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q``.
 ///
 /// For example, if you have a `ChildFeature` reducer that encapsulates the logic and behavior for a
 /// feature, then any feature that wants to present that feature will hold onto `ChildFeature.State`
@@ -23,7 +23,7 @@ import Combine
 ///
 /// For the most part your feature's logic can deal with `child` as a plain optional value, but
 /// there are times you need to know that you are secretly dealing with `PresentationState`. For
-/// example, when using the ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` reducer operator to
+/// example, when using the ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q`` reducer operator to
 /// integrate the parent and child features together, you will construct a key path to the projected
 /// value `\.$child`:
 ///
@@ -145,7 +145,13 @@ public struct PresentationState<State> {
     message:
       "Use the version of this subscript with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
   )
-  public subscript<Case>(case path: AnyCasePath<State, Case>) -> Case? {
+  public subscript<Case>(
+    case path: AnyCasePath<State, Case>,
+    fileID: StaticString = #fileID,
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) -> Case? {
     _read { yield self.wrappedValue.flatMap(path.extract) }
     _modify {
       let root = self.wrappedValue
@@ -160,10 +166,14 @@ public struct PresentationState<State> {
         {
           description = caseName
         }
-        runtimeWarn(
+        reportIssue(
           """
           Can't modify unrelated case\(description.map { " \($0.debugDescription)" } ?? "")
-          """
+          """,
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
         return
       }
@@ -192,7 +202,7 @@ extension PresentationState: Hashable where State: Hashable {
 extension PresentationState: Sendable where State: Sendable {}
 
 extension PresentationState: Decodable where State: Decodable {
-  public init(from decoder: Decoder) throws {
+  public init(from decoder: any Decoder) throws {
     do {
       self.init(wrappedValue: try decoder.singleValueContainer().decode(State.self))
     } catch {
@@ -202,7 +212,7 @@ extension PresentationState: Decodable where State: Decodable {
 }
 
 extension PresentationState: Encodable where State: Encodable {
-  public func encode(to encoder: Encoder) throws {
+  public func encode(to encoder: any Encoder) throws {
     do {
       var container = encoder.singleValueContainer()
       try container.encode(self.wrappedValue)
@@ -221,7 +231,7 @@ extension PresentationState: CustomReflectable {
 /// A wrapper type for actions that can be presented.
 ///
 /// Use this wrapper type for modeling a feature's domain that needs to present a child
-/// feature using ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at``.
+/// feature using ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q``.
 ///
 /// For example, if you have a `ChildFeature` reducer that encapsulates the logic and behavior
 /// for a feature, then any feature that wants to present that feature will hold onto
@@ -274,7 +284,7 @@ extension PresentationAction: CasePathable {
 
     public var presented: AnyCasePath<PresentationAction, Action> {
       AnyCasePath(
-        embed: PresentationAction.presented,
+        embed: { .presented($0) },
         extract: {
           guard case let .presented(value) = $0 else { return nil }
           return value
@@ -283,7 +293,7 @@ extension PresentationAction: CasePathable {
     }
 
     public subscript<AppendedAction>(
-      dynamicMember keyPath: CaseKeyPath<Action, AppendedAction>
+      dynamicMember keyPath: _CaseKeyPath<Action, AppendedAction>
     ) -> AnyCasePath<PresentationAction, AppendedAction>
     where Action: CasePathable {
       AnyCasePath<PresentationAction, AppendedAction>(
@@ -297,7 +307,7 @@ extension PresentationAction: CasePathable {
 
     @_disfavoredOverload
     public subscript<AppendedAction>(
-      dynamicMember keyPath: CaseKeyPath<Action, AppendedAction>
+      dynamicMember keyPath: _CaseKeyPath<Action, AppendedAction>
     ) -> AnyCasePath<PresentationAction, PresentationAction<AppendedAction>>
     where Action: CasePathable {
       AnyCasePath<PresentationAction, PresentationAction<AppendedAction>>(
@@ -391,25 +401,30 @@ extension Reducer {
   /// - Returns: A reducer that combines the child reducer with the parent reducer.
   @warn_unqualified_access
   @inlinable
-  public func ifLet<DestinationState, DestinationAction, Destination: Reducer>(
+  public func ifLet<
+    DestinationState, DestinationAction, Destination: Reducer<DestinationState, DestinationAction>
+  >(
     _ toPresentationState: WritableKeyPath<State, PresentationState<DestinationState>>,
     action toPresentationAction: CaseKeyPath<Action, PresentationAction<DestinationAction>>,
     @ReducerBuilder<DestinationState, DestinationAction> destination: () -> Destination,
     fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) -> _PresentationReducer<Self, Destination>
-  where Destination.State == DestinationState, Destination.Action == DestinationAction {
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) -> some Reducer<State, Action> {
     _PresentationReducer(
       base: self,
       toPresentationState: toPresentationState,
       toPresentationAction: AnyCasePath(toPresentationAction),
       destination: destination(),
       fileID: fileID,
-      line: line
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
 
-  /// A special overload of ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` for alerts
+  /// A special overload of ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q`` for alerts
   /// and confirmation dialogs that does not require a child reducer.
   @warn_unqualified_access
   @inlinable
@@ -417,14 +432,18 @@ extension Reducer {
     _ toPresentationState: WritableKeyPath<State, PresentationState<DestinationState>>,
     action toPresentationAction: CaseKeyPath<Action, PresentationAction<DestinationAction>>,
     fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) -> _PresentationReducer<Self, EmptyReducer<DestinationState, DestinationAction>> {
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) -> some Reducer<State, Action> {
     self.ifLet(
       toPresentationState,
       action: toPresentationAction,
       destination: {},
       fileID: fileID,
-      line: line
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
 
@@ -454,21 +473,26 @@ extension Reducer {
   )
   @warn_unqualified_access
   @inlinable
-  public func ifLet<DestinationState, DestinationAction, Destination: Reducer>(
+  public func ifLet<
+    DestinationState, DestinationAction, Destination: Reducer<DestinationState, DestinationAction>
+  >(
     _ toPresentationState: WritableKeyPath<State, PresentationState<DestinationState>>,
     action toPresentationAction: AnyCasePath<Action, PresentationAction<DestinationAction>>,
     @ReducerBuilder<DestinationState, DestinationAction> destination: () -> Destination,
     fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) -> _PresentationReducer<Self, Destination>
-  where Destination.State == DestinationState, Destination.Action == DestinationAction {
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) -> some Reducer<State, Action> {
     _PresentationReducer(
       base: self,
       toPresentationState: toPresentationState,
       toPresentationAction: toPresentationAction,
       destination: destination(),
       fileID: fileID,
-      line: line
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
 
@@ -502,14 +526,18 @@ extension Reducer {
     _ toPresentationState: WritableKeyPath<State, PresentationState<DestinationState>>,
     action toPresentationAction: AnyCasePath<Action, PresentationAction<DestinationAction>>,
     fileID: StaticString = #fileID,
-    line: UInt = #line
-  ) -> _PresentationReducer<Self, EmptyReducer<DestinationState, DestinationAction>> {
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) -> some Reducer<State, Action> {
     self.ifLet(
       toPresentationState,
       action: toPresentationAction,
       destination: {},
       fileID: fileID,
-      line: line
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
 }
@@ -522,7 +550,9 @@ public struct _PresentationReducer<Base: Reducer, Destination: Reducer>: Reducer
     AnyCasePath<Base.Action, PresentationAction<Destination.Action>>
   @usableFromInline let destination: Destination
   @usableFromInline let fileID: StaticString
+  @usableFromInline let filePath: StaticString
   @usableFromInline let line: UInt
+  @usableFromInline let column: UInt
 
   @Dependency(\.navigationIDPath) var navigationIDPath
 
@@ -533,14 +563,18 @@ public struct _PresentationReducer<Base: Reducer, Destination: Reducer>: Reducer
     toPresentationAction: AnyCasePath<Base.Action, PresentationAction<Destination.Action>>,
     destination: Destination,
     fileID: StaticString,
-    line: UInt
+    filePath: StaticString,
+    line: UInt,
+    column: UInt
   ) {
     self.base = base
     self.toPresentationState = toPresentationState
     self.toPresentationAction = toPresentationAction
     self.destination = destination
     self.fileID = fileID
+    self.filePath = filePath
     self.line = line
+    self.column = column
   }
 
   public func reduce(into state: inout Base.State, action: Base.Action) -> Effect<Base.Action> {
@@ -573,7 +607,7 @@ public struct _PresentationReducer<Base: Reducer, Destination: Reducer>: Reducer
         .reduce(
           into: &state[keyPath: self.toPresentationState].wrappedValue!, action: destinationAction
         )
-        .map { self.toPresentationAction.embed(.presented($0)) }
+        .map { [toPresentationAction] in toPresentationAction.embed(.presented($0)) }
         ._cancellable(navigationIDPath: destinationNavigationIDPath)
       baseEffects = self.base.reduce(into: &state, action: action)
       if let ephemeralType = ephemeralType(of: destinationState),
@@ -589,7 +623,7 @@ public struct _PresentationReducer<Base: Reducer, Destination: Reducer>: Reducer
       baseEffects = self.base.reduce(into: &state, action: action)
 
     case (.none, .some):
-      runtimeWarn(
+      reportIssue(
         """
         An "ifLet" at "\(self.fileID):\(self.line)" received a presentation action when \
         destination state was absent. …
@@ -605,10 +639,14 @@ public struct _PresentationReducer<Base: Reducer, Destination: Reducer>: Reducer
         destination reducers can handle their actions while their state is still present.
 
         • This action was sent to the store while destination state was "nil". Make sure that \
-        actions for this reducer can only be sent from a view store when state is present, or \
+        actions for this reducer can only be sent from a store when state is present, or \
         from effects that start from this reducer. In SwiftUI applications, use a Composable \
         Architecture view modifier like "sheet(store:…)".
-        """
+        """,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
       )
       destinationEffects = .none
       baseEffects = self.base.reduce(into: &state, action: action)
@@ -672,15 +710,15 @@ public struct _PresentationReducer<Base: Reducer, Destination: Reducer>: Reducer
 }
 
 @usableFromInline
-struct PresentationDismissID: Hashable {
+struct PresentationDismissID: Hashable, Sendable {
   @usableFromInline init() {}
 }
 @usableFromInline
-struct OnFirstAppearID: Hashable {
+struct OnFirstAppearID: Hashable, Sendable {
   @usableFromInline init() {}
 }
 
-public struct _PresentedID: Hashable {
+public struct _PresentedID: Hashable, Sendable {
   @inlinable
   public init() {
     self.init(internal: ())
@@ -690,9 +728,9 @@ public struct _PresentedID: Hashable {
   init(internal: Void) {}
 }
 
-extension Task where Success == Never, Failure == Never {
-  internal static func _cancel<ID: Hashable>(
-    id: ID,
+extension Task<Never, Never> {
+  internal static func _cancel(
+    id: some Hashable & Sendable,
     navigationID: NavigationIDPath
   ) {
     withDependencies {
@@ -704,8 +742,8 @@ extension Task where Success == Never, Failure == Never {
 }
 
 extension Effect {
-  internal func _cancellable<ID: Hashable>(
-    id: ID = _PresentedID(),
+  internal func _cancellable(
+    id: some Hashable & Sendable = _PresentedID(),
     navigationIDPath: NavigationIDPath,
     cancelInFlight: Bool = false
   ) -> Self {
@@ -715,8 +753,8 @@ extension Effect {
       self.cancellable(id: id, cancelInFlight: cancelInFlight)
     }
   }
-  internal static func _cancel<ID: Hashable>(
-    id: ID = _PresentedID(),
+  internal static func _cancel(
+    id: some Hashable & Sendable = _PresentedID(),
     navigationID: NavigationIDPath
   ) -> Self {
     withDependencies {

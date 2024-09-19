@@ -19,7 +19,7 @@ the rest.
 ## Basics
 
 The tools for this style of navigation include the ``Presents()`` macro,
-``PresentationAction``, the ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` operator, 
+``PresentationAction``, the ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q`` operator, 
 and that is all. Once your feature is properly integrated with those tools you can use all of 
 SwiftUI's normal navigation view modifiers, such as `sheet(item:)`, `popover(item:)`, etc.
 
@@ -56,7 +56,7 @@ struct InventoryFeature {
 > being presented, and `nil` presents the feature is dismissed.
 
 Next you can integrate the reducers of the parent and child features by using the 
-``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` reducer operator, as well as having an 
+``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q`` reducer operator, as well as having an 
 action in the parent domain for populating the child's state to drive navigation:
 
 ```swift
@@ -115,7 +115,7 @@ struct InventoryView: View {
 ```
 
 > Note: We use SwiftUI's `@Bindable` property wrapper to produce a binding to a store, which can be
-> further scoped using ``SwiftUI/Binding/scope(state:action:fileID:line:)``.
+> further scoped using ``SwiftUI/Binding/scope(state:action:fileID:filePath:line:column:)``.
 
 With those few steps completed the domains and views of the parent and child features are now
 integrated together, and when the `addItem` state flips to a non-`nil` value the sheet will be
@@ -215,7 +215,7 @@ struct InventoryFeature {
 }
 ```
 
-And then we must make use of the ``Reducer/ifLet(_:action:destination:fileID:line:)-8qzye`` operator
+And then we must make use of the ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q`` operator
 to integrate the domain of the destination with the domain of the parent feature:
 
 ```swift
@@ -270,7 +270,7 @@ struct InventoryView: View {
 ```
 
 And then in the `body` of the view you can use the
-``SwiftUI/Binding/scope(state:action:fileID:line:)`` operator to derive bindings from `$store`:
+``SwiftUI/Binding/scope(state:action:fileID:filePath:line:column:)`` operator to derive bindings from `$store`:
 
 ```swift
 var body: some View {
@@ -314,7 +314,7 @@ drill-down will occur immediately.
 One of the best features of tree-based navigation is that it unifies all forms of navigation with a
 single style of API. First of all, regardless of the type of navigation you plan on performing,
 integrating the parent and child features together can be done with the single
-``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` operator. This one single API services
+``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q`` operator. This one single API services
 all forms of optional-driven navigation.
 
 And then in the view, whether you are wanting to perform a drill-down, show a sheet, display
@@ -357,42 +357,10 @@ seemingly disparate forms of navigation can be unified under a single style of A
 
 #### Backwards compatible availability
 
-Depending on your deployment target, certain APIs may be unavailable. For example, if you target
-iOS 16, you will not have access to iOS 17's `navigationDestination(item:)` view modifier. You can
-easily backport the tool to work on older platforms by defining a wrapper for the API that calls
-down to the available `navigationDestination(isPresented:)` API. Just paste the following into your
-project:
-
-```swift
-extension View {
-  @available(iOS, introduced: 16, deprecated: 17)
-  @available(macOS, introduced: 13, deprecated: 14)
-  @available(tvOS, introduced: 16, deprecated: 17)
-  @available(watchOS, introduced: 9, deprecated: 10)
-  @ViewBuilder
-  func navigationDestinationWrapper<D: Hashable, C: View>(
-    item: Binding<D?>,
-    @ViewBuilder destination: @escaping (D) -> C
-  ) -> some View {
-    navigationDestination(isPresented: item.isPresented) {
-      if let item = item.wrappedValue {
-        destination(item)
-      }
-    }
-  }
-}
-
-fileprivate extension Optional where Wrapped: Hashable {
-  var isPresented: Bool {
-    get { self != nil }
-    set { if !newValue { self = nil } }
-  }
-}
-```
-
-If you target platforms earlier than iOS 16, macOS 13, tvOS 16 and watchOS 9, then you cannot use
-`navigationDestination` at all. Instead you can use `NavigationLink`, but you must define another
-helper for driving navigation off of a binding of data rather than just a simple boolean. Just paste
+Depending on your deployment target, certain APIs may be unavailable. For example, if you target \
+platforms earlier than iOS 16, macOS 13, tvOS 16 and watchOS 9, then you cannot use 
+`navigationDestination`. Instead you can use `NavigationLink`, but you must define helper for 
+driving navigation off of a binding of data rather than just a simple boolean. Just paste
 the following into your project:
 
 ```swift
@@ -403,6 +371,7 @@ the following into your project:
 extension NavigationLink {
   public init<D, C: View>(
     item: Binding<D?>,
+    onNavigate: @escaping (_ isActive: Bool) -> Void,
     @ViewBuilder destination: (D) -> C,
     @ViewBuilder label: () -> Label
   ) where Destination == C? {
@@ -411,6 +380,7 @@ extension NavigationLink {
       isActive: Binding(
         get: { item.wrappedValue != nil },
         set: { isActive, transaction in
+          onNavigate(isActive)
           if !isActive {
             item.transaction(transaction).wrappedValue = nil
           }
@@ -421,6 +391,10 @@ extension NavigationLink {
   }
 }
 ```
+
+That gives you the ability to drive a `NavigationLink` from state. When the link is tapped the
+`onNavigate` closure will be invoked, giving you the ability to populate state. And when the 
+feature is dismissed, the state will be `nil`'d out.
 
 ## Integration
 
@@ -510,7 +484,7 @@ struct Feature {
 ```
 
 > Note: The ``DismissEffect`` function is async which means it cannot be invoked directly inside a 
-> reducer. Instead it must be called from ``Effect/run(priority:operation:catch:fileID:line:)``.
+> reducer. Instead it must be called from ``Effect/run(priority:operation:catch:fileID:filePath:line:column:)``.
 
 When `self.dismiss()` is invoked it will `nil` out the state responsible for presenting the feature
 by sending a ``PresentationAction/dismiss`` action back into the system, causing the feature to be
@@ -578,7 +552,7 @@ struct CounterFeature {
 ```
 
 And then let's embed that feature into a parent feature using the ``Presents()`` macro, 
-``PresentationAction`` type and ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at``
+``PresentationAction`` type and ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q``
 operator:
 
 ```swift
@@ -637,7 +611,7 @@ await store.send(\.counter.incrementButtonTapped) {
 
 And then we finally expect that the child dismisses itself, which manifests itself as the 
 ``PresentationAction/dismiss`` action being sent to `nil` out the `counter` state, which we can
-assert using the ``TestStore/receive(_:timeout:assert:file:line:)-6325h`` method on ``TestStore``:
+assert using the ``TestStore/receive(_:timeout:assert:fileID:file:line:column:)-53wic`` method on ``TestStore``:
 
 ```swift
 await store.receive(\.counter.dismiss) {

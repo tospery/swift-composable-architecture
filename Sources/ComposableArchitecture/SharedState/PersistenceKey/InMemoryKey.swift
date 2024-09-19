@@ -23,10 +23,10 @@ extension PersistenceReaderKey {
 /// A type defining an in-memory persistence strategy
 ///
 /// See ``PersistenceReaderKey/inMemory(_:)`` to create values of this type.
-public struct InMemoryKey<Value>: PersistenceKey, Sendable {
-  let key: String
-  let store: InMemoryStorage
-  public init(_ key: String) {
+public struct InMemoryKey<Value: Sendable>: PersistenceKey, Sendable {
+  private let key: String
+  private let store: InMemoryStorage
+  fileprivate init(_ key: String) {
     @Dependency(\.defaultInMemoryStorage) var defaultInMemoryStorage
     self.key = key
     self.store = defaultInMemoryStorage

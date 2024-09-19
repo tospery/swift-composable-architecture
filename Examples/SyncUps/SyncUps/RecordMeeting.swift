@@ -118,7 +118,9 @@ struct RecordMeeting {
 
   private func startSpeechRecognition(send: Send<Action>) async {
     do {
-      let speechTask = await speechClient.startTask(SFSpeechAudioBufferRecognitionRequest())
+      let speechTask = await speechClient.startTask(
+        UncheckedSendable(SFSpeechAudioBufferRecognitionRequest())
+      )
       for try await result in speechTask {
         await send(.speechResult(result))
       }
@@ -346,13 +348,13 @@ struct SpeakerArc: Shape {
     }
   }
 
-  private var degreesPerSpeaker: Double {
+  nonisolated private var degreesPerSpeaker: Double {
     360 / Double(totalSpeakers)
   }
-  private var startAngle: Angle {
+  nonisolated private var startAngle: Angle {
     Angle(degrees: degreesPerSpeaker * Double(speakerIndex) + 1)
   }
-  private var endAngle: Angle {
+  nonisolated private var endAngle: Angle {
     Angle(degrees: startAngle.degrees + degreesPerSpeaker - 1)
   }
 }

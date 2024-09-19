@@ -7,9 +7,9 @@
 ///
 /// See the article <doc:SharingState> for more information, in particular the
 /// <doc:SharingState#Custom-persistence> section.
-public protocol PersistenceReaderKey<Value> {
+public protocol PersistenceReaderKey<Value>: Sendable {
   /// A type that can be loaded or subscribed to in an external system.
-  associatedtype Value
+  associatedtype Value: Sendable
 
   /// A type representing the hashable identity of a persistence key.
   associatedtype ID: Hashable = Self
@@ -35,7 +35,7 @@ public protocol PersistenceReaderKey<Value> {
   ///   deinitialized, the `didSet` closure will no longer be invoked.
   func subscribe(
     initialValue: Value?,
-    didSet: @Sendable @escaping (_ newValue: Value?) -> Void
+    didSet: @escaping @Sendable (_ newValue: Value?) -> Void
   ) -> Shared<Value>.Subscription
 }
 
@@ -46,7 +46,7 @@ extension PersistenceReaderKey where ID == Self {
 extension PersistenceReaderKey {
   public func subscribe(
     initialValue: Value?,
-    didSet: @Sendable @escaping (_ newValue: Value?) -> Void
+    didSet: @escaping @Sendable (_ newValue: Value?) -> Void
   ) -> Shared<Value>.Subscription {
     Shared.Subscription {}
   }

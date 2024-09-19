@@ -46,7 +46,7 @@ final class AppStorageTests: XCTestCase {
     @Shared(.appStorage("url")) var url: URL? = URL(string: "https://pointfree.co")
     XCTAssertEqual(defaults.url(forKey: "url"), URL(string: "https://pointfree.co"))
 
-    url = URL(string: "https://example.com")
+    url = URL(string: "https://example.com")!
     XCTAssertEqual(url, URL(string: "https://example.com"))
     XCTAssertEqual(defaults.url(forKey: "url"), URL(string: "https://example.com"))
   }
@@ -175,6 +175,145 @@ final class AppStorageTests: XCTestCase {
     XCTAssertEqual(count1, nil)
     @Shared(.appStorage("count")) var count2: Int? = nil
     XCTAssertEqual(count2, nil)
+  }
+
+  func testOptionalInitializers_URL() {
+    @Shared(.appStorage("url1")) var url1: URL?
+    XCTAssertEqual(url1, nil)
+    @Shared(.appStorage("url2")) var url2: URL? = nil
+    XCTAssertEqual(url2, nil)
+  }
+
+  func testRemoveDuplicates() {
+    @Dependency(\.defaultAppStorage) var store
+    @Shared(.appStorage("count")) var count = 0
+
+    let values = LockIsolated([Int]())
+    let cancellable = $count
+      .publisher
+      .sink { count in values.withValue { $0.append(count) } }
+    defer { _ = cancellable }
+
+    count += 1
+    XCTAssertEqual(values.value, [1])
+
+    store.setValue(2, forKey: "other-count")
+    XCTAssertEqual(values.value, [1])
+  }
+
+  func testUpdateStoreFromBackgroundThread() async throws {
+    @Dependency(\.defaultAppStorage) var store
+    @Shared(.appStorage("count")) var count = 0
+
+    let publisherExpectation = expectation(description: "publisher")
+    let cancellable = $count.publisher.sink { _ in
+      XCTAssertTrue(Thread.isMainThread)
+      publisherExpectation.fulfill()
+    }
+    defer { _ = cancellable }
+
+    let perceptionExpectation = self.expectation(description: "perception")
+    withPerceptionTracking {
+      _ = count
+    } onChange: {
+      XCTAssertTrue(Thread.isMainThread)
+      perceptionExpectation.fulfill()
+    }
+
+    await withUnsafeContinuation { continuation in
+      DispatchQueue.global().async { [store = UncheckedSendable(store)] in
+        XCTAssertFalse(Thread.isMainThread)
+        store.wrappedValue.setValue(1, forKey: "count")
+        continuation.resume()
+      }
+    }
+
+    await fulfillment(of: [perceptionExpectation, publisherExpectation], timeout: 1)
+  }
+
+  @MainActor
+  func testUpdateStoreFromMainThread() async throws {
+    @Dependency(\.defaultAppStorage) var store
+    @Shared(.appStorage("count")) var count = 0
+    let isInStackFrame = LockIsolated(false)
+
+    let publisherExpectation = expectation(description: "publisher")
+    let cancellable = $count.publisher.sink { _ in
+      XCTAssertTrue(Thread.isMainThread)
+      XCTAssertTrue(isInStackFrame.value)
+      publisherExpectation.fulfill()
+    }
+    defer { _ = cancellable }
+
+    await withUnsafeContinuation { continuation in
+      XCTAssertTrue(Thread.isMainThread)
+      isInStackFrame.withValue { $0 = true }
+      store.setValue(1, forKey: "count")
+      isInStackFrame.withValue { $0 = false }
+      continuation.resume()
+    }
+
+    await fulfillment(of: [publisherExpectation], timeout: 0)
+  }
+
+  func testWillEnterForegroundFromBackgroundThread() async throws {
+    @Shared(.appStorage("count")) var count = 0
+
+    let publisherExpectation = expectation(description: "publisher")
+    let cancellable = $count.publisher.sink { _ in
+      XCTAssertTrue(Thread.isMainThread)
+      publisherExpectation.fulfill()
+    }
+    defer { _ = cancellable }
+
+    let perceptionExpectation = self.expectation(description: "perception")
+    withPerceptionTracking {
+      _ = count
+    } onChange: {
+      XCTAssertTrue(Thread.isMainThread)
+      perceptionExpectation.fulfill()
+    }
+
+    await withUnsafeContinuation { continuation in
+      DispatchQueue.global().async {
+        XCTAssertFalse(Thread.isMainThread)
+        NotificationCenter.default.post(name: willEnterForegroundNotificationName!, object: nil)
+        continuation.resume()
+      }
+    }
+
+    await fulfillment(of: [perceptionExpectation, publisherExpectation], timeout: 1)
+  }
+
+  func testUpdateStoreFromBackgroundThread_KeyPath() async throws {
+    @Dependency(\.defaultAppStorage) var store
+    @Shared(.appStorage(\.count)) var count = 0
+
+    let publisherExpectation = expectation(description: "publisher")
+    publisherExpectation.expectedFulfillmentCount = 2
+    let cancellable = $count.publisher.sink { _ in
+      XCTAssertTrue(Thread.isMainThread)
+      publisherExpectation.fulfill()
+    }
+    defer { _ = cancellable }
+
+    let perceptionExpectation = self.expectation(description: "perception")
+    withPerceptionTracking {
+      _ = count
+    } onChange: {
+      XCTAssertTrue(Thread.isMainThread)
+      perceptionExpectation.fulfill()
+    }
+
+    await withUnsafeContinuation { continuation in
+      DispatchQueue.global().async { [store = UncheckedSendable(store)] in
+        XCTAssertFalse(Thread.isMainThread)
+        store.wrappedValue.count = 1
+        continuation.resume()
+      }
+    }
+
+    await fulfillment(of: [perceptionExpectation, publisherExpectation], timeout: 1)
   }
 }
 
