@@ -112,78 +112,78 @@ struct Search {
 }
 
 struct SearchView: View {
-  @Bindable var store: StoreOf<Search>
-
-  var body: some View {
-    NavigationStack {
-      VStack(alignment: .leading) {
-        Text(readMe)
-          .padding()
-
-        HStack {
-          Image(systemName: "magnifyingglass")
-          TextField(
-            "New York, San Francisco, ...", text: $store.searchQuery.sending(\.searchQueryChanged)
-          )
-          .textFieldStyle(.roundedBorder)
-          .autocapitalization(.none)
-          .disableAutocorrection(true)
-        }
-        .padding(.horizontal, 16)
-
-        List {
-          ForEach(store.results) { location in
+    @Bindable var store: StoreOf<Search>
+    
+    var body: some View {
+        NavigationStack {
             VStack(alignment: .leading) {
-              Button {
-                store.send(.searchResultTapped(location))
-              } label: {
+                Text(readMe)
+                    .padding()
+                
                 HStack {
-                  Text(location.name)
-
-                  if store.resultForecastRequestInFlight?.id == location.id {
-                    ProgressView()
-                  }
+                    Image(systemName: "magnifyingglass")
+                    TextField(
+                        "New York, San Francisco, ...", text: $store.searchQuery.sending(\.searchQueryChanged)
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
                 }
-              }
-
-              if location.id == store.weather?.id {
-                weatherView(locationWeather: store.weather)
-              }
+                .padding(.horizontal, 16)
+                
+                List {
+                    ForEach(store.results) { location in
+                        VStack(alignment: .leading) {
+                            Button {
+                                store.send(.searchResultTapped(location))
+                            } label: {
+                                HStack {
+                                    Text(location.name)
+                                    
+                                    if store.resultForecastRequestInFlight?.id == location.id {
+                                        ProgressView()
+                                    }
+                                }
+                            }
+                            
+                            if location.id == store.weather?.id {
+                                weatherView(locationWeather: store.weather)
+                            }
+                        }
+                    }
+                }
+                
+                Button("Weather API provided by Open-Meteo") {
+                    UIApplication.shared.open(URL(string: "https://open-meteo.com/en")!)
+                }
+                .foregroundColor(.gray)
+                .padding(.all, 16)
             }
-          }
+            .navigationTitle("Search")
         }
-
-        Button("Weather API provided by Open-Meteo") {
-          UIApplication.shared.open(URL(string: "https://open-meteo.com/en")!)
+        .task(id: store.searchQuery) {
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+                await store.send(.searchQueryChangeDebounced).finish()
+            } catch {}
         }
-        .foregroundColor(.gray)
-        .padding(.all, 16)
-      }
-      .navigationTitle("Search")
     }
-    .task(id: store.searchQuery) {
-      do {
-        try await Task.sleep(for: .milliseconds(300))
-        await store.send(.searchQueryChangeDebounced).finish()
-      } catch {}
-    }
-  }
-
-  @ViewBuilder
-  func weatherView(locationWeather: Search.State.Weather?) -> some View {
-    if let locationWeather {
-      let days = locationWeather.days
-        .enumerated()
-        .map { idx, weather in formattedWeather(day: weather, isToday: idx == 0) }
-
-      VStack(alignment: .leading) {
-        ForEach(days, id: \.self) { day in
-          Text(day)
+    
+    @ViewBuilder
+    func weatherView(locationWeather: Search.State.Weather?) -> some View {
+        if let locationWeather {
+            let days = locationWeather.days
+                .enumerated()
+                .map { idx, weather in formattedWeather(day: weather, isToday: idx == 0) }
+            
+            VStack(alignment: .leading) {
+                ForEach(days, id: \.self) { day in
+                    Text(day)
+                }
+            }
+            .padding(.leading, 16)
         }
-      }
-      .padding(.leading, 16)
     }
-  }
 }
 
 private func formattedWeather(day: Search.State.Weather.Day, isToday: Bool) -> String {
@@ -204,9 +204,9 @@ private let dateFormatter: DateFormatter = {
 }()
 
 #Preview {
-  SearchView(
-    store: Store(initialState: Search.State()) {
-      Search()
-    }
-  )
+    SearchView(
+        store: Store(initialState: Search.State()) {
+            Search()
+        }
+    )
 }
