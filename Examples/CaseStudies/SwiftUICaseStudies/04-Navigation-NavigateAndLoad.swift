@@ -58,6 +58,7 @@ struct NavigateAndLoad {
 struct NavigateAndLoadView: View {
     @Bindable var store: StoreOf<NavigateAndLoad>
     
+    @available(*, deprecated, message: "This method is deprecated and will be removed in future versions")
     var body: some View {
         Form {
             Section {
