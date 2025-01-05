@@ -1,11 +1,12 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import SyncUps
 
-class SyncUpDetailTests: XCTestCase {
-  @MainActor
-  func testDelete() async {
+@MainActor
+struct SyncUpDetailTests {
+  @Test
+  func delete() async {
     let syncUp = SyncUp(
       id: SyncUp.ID(),
       title: "Point-Free Morning Sync"
@@ -26,8 +27,8 @@ class SyncUpDetailTests: XCTestCase {
     //        • .delegate(.deleteSyncUp)
   }
   
-  @MainActor
-  func testEdit() async {
+  @Test
+  func edit() async {
     // ...
   }
 }

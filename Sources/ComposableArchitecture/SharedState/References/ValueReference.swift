@@ -4,13 +4,17 @@ import Foundation
 #if canImport(Combine)
   import Combine
 #endif
-#if canImport(Perception)
-  import Perception
-#endif
 
 extension Shared {
+  /// Creates a shared reference to a value using a persistence key.
+  ///
+  /// - Parameters:
+  ///   - value: A default value that is used when no value can be returned from the persistence
+  ///     key.
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading and saving the shared reference's value from some external source.
   public init(
-    wrappedValue value: @autoclosure @escaping () -> Value,
+    wrappedValue value: @autoclosure @Sendable () -> Value,
     _ persistenceKey: some PersistenceKey<Value>,
     fileID: StaticString = #fileID,
     line: UInt = #line
@@ -45,6 +49,11 @@ extension Shared {
     )
   }
 
+  /// Creates a shared reference to an optional value using a persistence key.
+  ///
+  /// - Parameters:
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading and saving the shared reference's value from some external source.
   @_disfavoredOverload
   public init<Wrapped>(
     _ persistenceKey: some PersistenceKey<Value>,
@@ -54,6 +63,14 @@ extension Shared {
     self.init(wrappedValue: nil, persistenceKey, fileID: fileID, line: line)
   }
 
+  /// Creates a shared reference to a value using a persistence key.
+  ///
+  /// If the given persistence key cannot load a value, an error is thrown. For a non-throwing
+  /// version of this initializer, see ``init(wrappedValue:_:fileID:line:)-512rh``.
+  ///
+  /// - Parameters:
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading and saving the shared reference's value from some external source.
   @_disfavoredOverload
   public init(
     _ persistenceKey: some PersistenceKey<Value>,
@@ -73,7 +90,7 @@ extension Shared {
   }
 
   private init(
-    throwingValue value: @autoclosure @escaping () throws -> Value,
+    throwingValue value: @autoclosure @Sendable () throws -> Value,
     _ persistenceKey: some PersistenceKey<Value>,
     fileID: StaticString = #fileID,
     line: UInt = #line
@@ -108,27 +125,39 @@ extension Shared {
     )
   }
 
-  public init<Key: PersistenceKey>(
+  /// Creates a shared reference to a value using a persistence key with a default value.
+  ///
+  /// - Parameters:
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading and saving the shared reference's value from some external source.
+  public init<Key: PersistenceKey<Value>>(
     _ persistenceKey: PersistenceKeyDefault<Key>,
     fileID: StaticString = #fileID,
     line: UInt = #line
-  ) where Key.Value == Value {
+  ) {
     self.init(
-      wrappedValue: persistenceKey.load(initialValue: nil) ?? persistenceKey.defaultValue(),
+      wrappedValue: persistenceKey.defaultValue(),
       persistenceKey.base,
       fileID: fileID,
       line: line
     )
   }
 
-  public init<Key: PersistenceKey>(
-    wrappedValue: @autoclosure @escaping () -> Value,
+  /// Creates a shared reference to a value using a persistence key by overriding its default value.
+  ///
+  /// - Parameters:
+  ///   - value: A default value that is used when no value can be returned from the persistence
+  ///     key.
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading and saving the shared reference's value from some external source.
+  public init<Key: PersistenceKey<Value>>(
+    wrappedValue value: @autoclosure @Sendable () -> Value,
     _ persistenceKey: PersistenceKeyDefault<Key>,
     fileID: StaticString = #fileID,
     line: UInt = #line
-  ) where Key.Value == Value {
+  ) {
     self.init(
-      wrappedValue: wrappedValue(),
+      wrappedValue: value(),
       persistenceKey.base,
       fileID: fileID,
       line: line
@@ -137,8 +166,15 @@ extension Shared {
 }
 
 extension SharedReader {
+  /// Creates a shared reference to a read-only value using a persistence key.
+  ///
+  /// - Parameters:
+  ///   - value: A default value that is used when no value can be returned from the persistence
+  ///     key.
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading the shared reference's value from some external source.
   public init(
-    wrappedValue value: @autoclosure @escaping () -> Value,
+    wrappedValue value: @autoclosure @Sendable () -> Value,
     _ persistenceKey: some PersistenceReaderKey<Value>,
     fileID: StaticString = #fileID,
     line: UInt = #line
@@ -172,6 +208,11 @@ extension SharedReader {
     )
   }
 
+  /// Creates a shared reference to an optional, read-only value using a persistence key.
+  ///
+  /// - Parameters:
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading the shared reference's value from some external source.
   @_disfavoredOverload
   public init<Wrapped>(
     _ persistenceKey: some PersistenceReaderKey<Value>,
@@ -181,6 +222,14 @@ extension SharedReader {
     self.init(wrappedValue: nil, persistenceKey, fileID: fileID, line: line)
   }
 
+  /// Creates a shared reference to a read-only value using a persistence key.
+  ///
+  /// If the given persistence key cannot load a value, an error is thrown. For a non-throwing
+  /// version of this initializer, see ``init(wrappedValue:_:fileID:line:)-7q52``.
+  ///
+  /// - Parameters:
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading the shared reference's value from some external source.
   @_disfavoredOverload
   public init(
     _ persistenceKey: some PersistenceReaderKey<Value>,
@@ -200,7 +249,7 @@ extension SharedReader {
   }
 
   private init(
-    throwingValue value: @autoclosure @escaping () throws -> Value,
+    throwingValue value: @autoclosure @Sendable () throws -> Value,
     _ persistenceKey: some PersistenceReaderKey<Value>,
     fileID: StaticString = #fileID,
     line: UInt = #line
@@ -234,27 +283,39 @@ extension SharedReader {
     )
   }
 
-  public init<Key: PersistenceReaderKey>(
+  /// Creates a shared reference to a read-only value using a persistence key with a default value.
+  ///
+  /// - Parameters:
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading the shared reference's value from some external source.
+  public init<Key: PersistenceReaderKey<Value>>(
     _ persistenceKey: PersistenceKeyDefault<Key>,
     fileID: StaticString = #fileID,
     line: UInt = #line
-  ) where Key.Value == Value {
+  ) {
     self.init(
-      wrappedValue: persistenceKey.load(initialValue: nil) ?? persistenceKey.defaultValue(),
+      wrappedValue: persistenceKey.defaultValue(),
       persistenceKey.base,
       fileID: fileID,
       line: line
     )
   }
 
-  public init<Key: PersistenceReaderKey>(
-    wrappedValue: @autoclosure @escaping () -> Value,
+  /// Creates a shared reference to a value using a persistence key by overriding its default value.
+  ///
+  /// - Parameters:
+  ///   - value: A default value that is used when no value can be returned from the persistence
+  ///     key.
+  ///   - persistenceKey: A persistence key associated with the shared reference. It is responsible
+  ///     for loading the shared reference's value from some external source.
+  public init<Key: PersistenceReaderKey<Value>>(
+    wrappedValue value: @autoclosure @Sendable () -> Value,
     _ persistenceKey: PersistenceKeyDefault<Key>,
     fileID: StaticString = #fileID,
     line: UInt = #line
-  ) where Key.Value == Value {
+  ) {
     self.init(
-      wrappedValue: wrappedValue(),
+      wrappedValue: value(),
       persistenceKey.base,
       fileID: fileID,
       line: line
@@ -264,39 +325,33 @@ extension SharedReader {
 
 private struct LoadError: Error {}
 
-final class ValueReference<Value, Persistence: PersistenceReaderKey<Value>>: Reference, @unchecked
-  Sendable
+final class ValueReference<Value, Persistence: PersistenceReaderKey<Value>>: Reference,
+  @unchecked Sendable
 {
   private let lock = NSRecursiveLock()
   private let persistenceKey: Persistence?
   #if canImport(Combine)
     private let subject: CurrentValueRelay<Value>
   #endif
-  private var subscription: Shared<Value>.Subscription?
+  private var subscription: Shared<Value>.Subscription!
   private var _value: Value {
     willSet {
       self.subject.send(newValue)
     }
   }
-  #if canImport(Perception)
-    private let _$perceptionRegistrar = PerceptionRegistrar(
-      isPerceptionCheckingEnabled: _isStorePerceptionCheckingEnabled
-    )
-  #endif
+  private let _$perceptionRegistrar = PerceptionRegistrar(
+    isPerceptionCheckingEnabled: _isStorePerceptionCheckingEnabled
+  )
   private let fileID: StaticString
   private let line: UInt
   var value: Value {
     get {
-      #if canImport(Perception)
-        self._$perceptionRegistrar.access(self, keyPath: \.value)
-      #endif
+      self._$perceptionRegistrar.access(self, keyPath: \.value)
       return self.lock.withLock { self._value }
     }
     set {
-      #if canImport(Perception)
-        self._$perceptionRegistrar.willSet(self, keyPath: \.value)
-        defer { self._$perceptionRegistrar.didSet(self, keyPath: \.value) }
-      #endif
+      self._$perceptionRegistrar.willSet(self, keyPath: \.value)
+      defer { self._$perceptionRegistrar.didSet(self, keyPath: \.value) }
       self.lock.withLock {
         self._value = newValue
         func open<A>(_ key: some PersistenceKey<A>) {
@@ -331,26 +386,22 @@ final class ValueReference<Value, Persistence: PersistenceReaderKey<Value>>: Ref
         initialValue: initialValue
       ) { [weak self] value in
         guard let self else { return }
-        #if canImport(Perception)
+        mainActorASAP {
           self._$perceptionRegistrar.willSet(self, keyPath: \.value)
           defer { self._$perceptionRegistrar.didSet(self, keyPath: \.value) }
-        #endif
-        self.lock.withLock {
-          self._value = value ?? initialValue
+          self.lock.withLock {
+            self._value = value ?? initialValue
+          }
         }
       }
     }
   }
   func access() {
-    #if canImport(Perception)
-      _$perceptionRegistrar.access(self, keyPath: \.value)
-    #endif
+    _$perceptionRegistrar.access(self, keyPath: \.value)
   }
   func withMutation<T>(_ mutation: () throws -> T) rethrows -> T {
-    #if canImport(Perception)
-      self._$perceptionRegistrar.willSet(self, keyPath: \.value)
-      defer { self._$perceptionRegistrar.didSet(self, keyPath: \.value) }
-    #endif
+    self._$perceptionRegistrar.willSet(self, keyPath: \.value)
+    defer { self._$perceptionRegistrar.didSet(self, keyPath: \.value) }
     return try mutation()
   }
   var description: String {
@@ -361,9 +412,8 @@ final class ValueReference<Value, Persistence: PersistenceReaderKey<Value>>: Ref
 #if canImport(Observation)
   extension ValueReference: Observable {}
 #endif
-#if canImport(Perception)
-  extension ValueReference: Perceptible {}
-#endif
+
+extension ValueReference: Perceptible {}
 
 private enum PersistentReferencesKey: DependencyKey {
   static var liveValue: LockIsolated<[AnyHashable: any Reference]> {

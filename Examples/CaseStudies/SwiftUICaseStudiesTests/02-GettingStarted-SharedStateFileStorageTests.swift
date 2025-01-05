@@ -1,11 +1,12 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import SwiftUICaseStudies
 
-final class SharedStateFileStorageTests: XCTestCase {
-  @MainActor
-  func testTabSelection() async {
+@MainActor
+struct SharedStateFileStorageTests {
+  @Test
+  func tabSelection() async {
     let store = TestStore(initialState: SharedStateFileStorage.State()) {
       SharedStateFileStorage()
     }
@@ -18,8 +19,8 @@ final class SharedStateFileStorageTests: XCTestCase {
     }
   }
 
-  @MainActor
-  func testSharedCounts() async {
+  @Test
+  func sharedCounts() async {
     let store = TestStore(initialState: SharedStateFileStorage.State()) {
       SharedStateFileStorage()
     }
@@ -37,8 +38,8 @@ final class SharedStateFileStorageTests: XCTestCase {
     }
   }
 
-  @MainActor
-  func testAlert() async {
+  @Test
+  func alert() async {
     let store = TestStore(initialState: SharedStateFileStorage.State()) {
       SharedStateFileStorage()
     }

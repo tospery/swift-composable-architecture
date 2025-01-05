@@ -53,6 +53,7 @@ day-to-day when building applications, such as:
 - <doc:Navigation>
 - <doc:SharingState>
 - <doc:Performance>
+- <doc:FAQ>
 
 ### Tutorials
 
@@ -61,7 +62,7 @@ day-to-day when building applications, such as:
 
 ### State management
 
-- <doc:Reducers>
+- ``Reducer``
 - ``Effect``
 - ``Store``
 - <doc:SharingState>

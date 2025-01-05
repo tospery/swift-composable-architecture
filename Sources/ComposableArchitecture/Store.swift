@@ -132,31 +132,28 @@ import SwiftUI
 /// case. Further, all actions sent to the store and all scopes (see ``scope(state:action:)-90255``)
 /// of the store are also checked to make sure that work is performed on the main thread.
 @dynamicMemberLookup
+#if swift(<5.10)
+  @MainActor(unsafe)
+#else
+  @preconcurrency@MainActor
+#endif
 public final class Store<State, Action> {
   var canCacheChildren = true
   private var children: [ScopeID<State, Action>: AnyObject] = [:]
-  var _isInvalidated = { false }
+  var _isInvalidated: @MainActor @Sendable () -> Bool = { false }
 
   @_spi(Internals) public let rootStore: RootStore
   private let toState: PartialToState<State>
   private let fromAction: (Action) -> Any
 
-  #if canImport(Perception)
-    #if !os(visionOS)
-      let _$observationRegistrar = PerceptionRegistrar(
-        isPerceptionCheckingEnabled: _isStorePerceptionCheckingEnabled
-      )
-    #else
-      let _$observationRegistrar = ObservationRegistrar()
-    #endif
-    private var parentCancellable: AnyCancellable?
+  #if !os(visionOS)
+    let _$observationRegistrar = PerceptionRegistrar(
+      isPerceptionCheckingEnabled: _isStorePerceptionCheckingEnabled
+    )
   #else
-    // NB: This dynamic member lookup is needed to support pre-Observation (<5.9) versions of Swift.
-    @_disfavoredOverload
-    private subscript(dynamicMember keyPath: KeyPath<State, Never>) -> Never {
-      self.currentState[keyPath: keyPath]
-    }
+    let _$observationRegistrar = ObservationRegistrar()
   #endif
+  private var parentCancellable: AnyCancellable?
 
   /// Initializes a store from an initial state and a reducer.
   ///
@@ -165,11 +162,11 @@ public final class Store<State, Action> {
   ///   - reducer: The reducer that powers the business logic of the application.
   ///   - prepareDependencies: A closure that can be used to override dependencies that will be accessed
   ///     by the reducer.
-  public convenience init<R: Reducer>(
+  public convenience init<R: Reducer<State, Action>>(
     initialState: @autoclosure () -> R.State,
     @ReducerBuilder<State, Action> reducer: () -> R,
     withDependencies prepareDependencies: ((inout DependencyValues) -> Void)? = nil
-  ) where R.State == State, R.Action == Action {
+  ) {
     let (initialState, reducer, dependencies) = withDependencies(prepareDependencies ?? { _ in }) {
       @Dependency(\.self) var dependencies
       return (initialState(), reducer(), dependencies)
@@ -188,7 +185,10 @@ public final class Store<State, Action> {
   }
 
   deinit {
-    Logger.shared.log("\(storeTypeName(of: self)).deinit")
+    guard Thread.isMainThread else { return }
+    MainActor._assumeIsolated {
+      Logger.shared.log("\(storeTypeName(of: self)).deinit")
+    }
   }
 
   /// Calls the given closure with a snapshot of the current state of the store.
@@ -203,11 +203,7 @@ public final class Store<State, Action> {
   ///   it conforms to ``ObservableState``.
   /// - Returns: The return value, if any, of the `body` closure.
   public func withState<R>(_ body: (_ state: State) -> R) -> R {
-    #if canImport(Perception)
-      _withoutPerceptionChecking { body(self.currentState) }
-    #else
-      body(self.currentState)
-    #endif
+    _withoutPerceptionChecking { body(self.currentState) }
   }
 
   /// Sends an action to the store.
@@ -331,8 +327,7 @@ public final class Store<State, Action> {
 
   @_spi(Internals)
   public var currentState: State {
-    threadCheck(status: .state)
-    return self.toState(self.rootStore.state)
+    self.toState(self.rootStore.state)
   }
 
   @_spi(Internals)
@@ -344,8 +339,6 @@ public final class Store<State, Action> {
       isInvalid: ((State) -> Bool)?
     ) -> Store<ChildState, ChildAction>
   {
-    threadCheck(status: .scope)
-
     if self.canCacheChildren,
       let id = id,
       let childStore = self.children[id] as? Store<ChildState, ChildAction>
@@ -359,10 +352,10 @@ public final class Store<State, Action> {
     )
     childStore._isInvalidated =
       id == nil || !self.canCacheChildren
-      ? {
+      ? { @MainActor @Sendable in
         isInvalid?(self.currentState) == true || self._isInvalidated()
       }
-      : { [weak self] in
+      : { @MainActor @Sendable [weak self] in
         guard let self else { return true }
         return isInvalid?(self.currentState) == true || self._isInvalidated()
       }
@@ -396,25 +389,23 @@ public final class Store<State, Action> {
     self.toState = toState
     self.fromAction = fromAction
 
-    #if canImport(Perception)
-      func subscribeToDidSet<T: ObservableState>(_ type: T.Type) -> AnyCancellable {
-        let toState = toState as! PartialToState<T>
-        return rootStore.didSet
-          .compactMap { [weak rootStore] in
-            rootStore.map { toState($0.state) }?._$id
-          }
-          .removeDuplicates()
-          .dropFirst()
-          .sink { [weak self] _ in
-            guard let self else { return }
-            self._$observationRegistrar.withMutation(of: self, keyPath: \.currentState) {}
-          }
-      }
+    func subscribeToDidSet<T: ObservableState>(_ type: T.Type) -> AnyCancellable {
+      let toState = toState as! PartialToState<T>
+      return rootStore.didSet
+        .compactMap { [weak rootStore] in
+          rootStore.map { toState($0.state) }?._$id
+        }
+        .removeDuplicates()
+        .dropFirst()
+        .sink { [weak self] _ in
+          guard let self else { return }
+          self._$observationRegistrar.withMutation(of: self, keyPath: \.currentState) {}
+        }
+    }
 
-      if let stateType = State.self as? ObservableState.Type {
-        self.parentCancellable = subscribeToDidSet(stateType)
-      }
-    #endif
+    if let stateType = State.self as? any ObservableState.Type {
+      self.parentCancellable = subscribeToDidSet(stateType)
+    }
   }
 
   convenience init<R: Reducer>(
@@ -462,7 +453,7 @@ public final class Store<State, Action> {
 }
 
 extension Store: CustomDebugStringConvertible {
-  public var debugDescription: String {
+  public nonisolated var debugDescription: String {
     storeTypeName(of: self)
   }
 }
@@ -491,15 +482,12 @@ public struct StorePublisher<State>: Publisher {
   let store: Any
   let upstream: AnyPublisher<State, Never>
 
-  init<P: Publisher>(
-    store: Any,
-    upstream: P
-  ) where P.Output == Output, P.Failure == Failure {
+  init(store: Any, upstream: some Publisher<Output, Failure>) {
     self.store = store
     self.upstream = upstream.eraseToAnyPublisher()
   }
 
-  public func receive<S: Subscriber>(subscriber: S) where S.Input == Output, S.Failure == Failure {
+  public func receive(subscriber: some Subscriber<Output, Failure>) {
     self.upstream.subscribe(
       AnySubscriber(
         receiveSubscription: subscriber.receive(subscription:),
@@ -688,12 +676,18 @@ private enum PartialToState<State> {
   }
 }
 
-#if canImport(Perception)
-  let _isStorePerceptionCheckingEnabled: Bool = {
-    if #available(iOS 17, macOS 14, tvOS 17, watchOS 10, *) {
-      return false
-    } else {
-      return true
-    }
-  }()
+let _isStorePerceptionCheckingEnabled: Bool = {
+  if #available(iOS 17, macOS 14, tvOS 17, watchOS 10, *) {
+    return false
+  } else {
+    return true
+  }
+}()
+
+#if canImport(Observation)
+  // NB: This extension must be placed in the same file as 'class Store' due to either a bug
+  //     in Swift, or very opaque and undocumented behavior of Swift.
+  //     See https://github.com/tuist/tuist/issues/6320#issuecomment-2148554117
+  @available(iOS 17, macOS 14, tvOS 17, watchOS 10, *)
+  extension Store: Observable {}
 #endif

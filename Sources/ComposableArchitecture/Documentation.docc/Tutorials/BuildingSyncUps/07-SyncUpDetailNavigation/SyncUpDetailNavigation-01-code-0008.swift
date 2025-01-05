@@ -2,7 +2,7 @@ import ComposableArchitecture
 import SwiftUI
 
 @Reducer
-struct App {
+struct AppFeature {
   @Reducer
   enum Path {
     case detail(SyncUpDetail)
@@ -31,3 +31,4 @@ struct App {
     .forEach(\.path, action: \.path)
   }
 }
+extension AppFeature.Path.State: Equatable {}

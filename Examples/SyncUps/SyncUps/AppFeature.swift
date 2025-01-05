@@ -3,7 +3,7 @@ import SwiftUI
 
 @Reducer
 struct AppFeature {
-  @Reducer(state: .equatable)
+  @Reducer
   enum Path {
     case detail(SyncUpDetail)
     case meeting(Meeting, syncUp: SyncUp)
@@ -30,7 +30,7 @@ struct AppFeature {
     }
     Reduce { state, action in
       switch action {
-      case let .path(.element(id, .detail(.delegate(delegateAction)))):
+      case let .path(.element(_, .detail(.delegate(delegateAction)))):
         switch delegateAction {
         case let .startMeeting(sharedSyncUp):
           state.path.append(.record(RecordMeeting.State(syncUp: sharedSyncUp)))
@@ -47,6 +47,7 @@ struct AppFeature {
     .forEach(\.path, action: \.path)
   }
 }
+extension AppFeature.Path.State: Equatable {}
 
 struct AppView: View {
   @Bindable var store: StoreOf<AppFeature>

@@ -1,11 +1,12 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import SyncUps
 
-final class RecordMeetingTests: XCTestCase {
-  @MainActor
-  func testTimerFinishes() async {
+@MainActor
+struct RecordMeetingTests {
+  @Test
+  func timerFinishes() async {
     let syncUp = SyncUp(
       id: SyncUp.ID(),
       attendees: [

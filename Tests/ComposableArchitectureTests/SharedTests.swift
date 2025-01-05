@@ -1,5 +1,6 @@
 import Combine
 @_spi(Internals) import ComposableArchitecture
+import CustomDump
 import XCTest
 
 final class SharedTests: XCTestCase {
@@ -25,6 +26,50 @@ final class SharedTests: XCTestCase {
   }
 
   @MainActor
+  func testSharingWithDelegateAction() async {
+    XCTTODO(
+      """
+      Ideally this test would pass but is a known, but also expected, issue with shared state and
+      the test store. The fix is to have the test store not eagerly process actions from effects,
+      but unfortunately that would be a breaking change in 1.0.
+      """)
+
+    let store = TestStore(
+      initialState: SharedFeature.State(
+        profile: Shared(Profile(stats: Shared(Stats()))),
+        sharedCount: Shared(0),
+        stats: Shared(Stats())
+      )
+    ) {
+      SharedFeature()
+    }
+    await store.send(.incrementSharedInDelegate)
+    await store.receive(\.delegate.didIncrement) {
+      $0.count = 1
+      $0.stats.count = 1
+    }
+  }
+
+  @MainActor
+  func testSharingWithDelegateAction_EagerActionProcessing() async {
+    let store = TestStore(
+      initialState: SharedFeature.State(
+        profile: Shared(Profile(stats: Shared(Stats()))),
+        sharedCount: Shared(0),
+        stats: Shared(Stats())
+      )
+    ) {
+      SharedFeature()
+    }
+    await store.send(.incrementSharedInDelegate) {
+      $0.stats.count = 1
+    }
+    await store.receive(\.delegate.didIncrement) {
+      $0.count = 1
+    }
+  }
+
+  @MainActor
   func testSharing_Failure() async {
     let store = TestStore(
       initialState: SharedFeature.State(
@@ -37,7 +82,7 @@ final class SharedTests: XCTestCase {
     }
     XCTExpectFailure {
       $0.compactDescription == """
-        A state change does not match expectation: …
+        failed - A state change does not match expectation: …
 
               SharedFeature.State(
                 _count: 0,
@@ -75,7 +120,7 @@ final class SharedTests: XCTestCase {
 
     XCTExpectFailure {
       $0.compactDescription == """
-        A state change does not match expectation: …
+        failed - A state change does not match expectation: …
 
               SharedFeature.State(
                 _count: 0,
@@ -115,9 +160,8 @@ final class SharedTests: XCTestCase {
     XCTAssertEqual(stats.count, 2)
   }
 
-  @MainActor
   func testIncrementalMutation() async {
-    let store = TestStore(
+    let store = await TestStore(
       initialState: SharedFeature.State(
         profile: Shared(Profile(stats: Shared(Stats()))),
         sharedCount: Shared(0),
@@ -144,7 +188,7 @@ final class SharedTests: XCTestCase {
     }
     XCTExpectFailure {
       $0.compactDescription == """
-        A state change does not match expectation: …
+        failed - A state change does not match expectation: …
 
               SharedFeature.State(
                 _count: 0,
@@ -163,9 +207,8 @@ final class SharedTests: XCTestCase {
     }
   }
 
-  @MainActor
   func testEffect() async {
-    let store = TestStore(
+    let store = await TestStore(
       initialState: SharedFeature.State(
         profile: Shared(Profile(stats: Shared(Stats()))),
         sharedCount: Shared(0),
@@ -193,7 +236,7 @@ final class SharedTests: XCTestCase {
     }
     XCTExpectFailure {
       $0.compactDescription == """
-        State was not expected to change, but a change occurred: …
+        failed - State was not expected to change, but a change occurred: …
 
               SharedFeature.State(
                 _count: 0,
@@ -211,9 +254,8 @@ final class SharedTests: XCTestCase {
     await store.receive(\.sharedIncrement)
   }
 
-  @MainActor
   func testMutationOfSharedStateInLongLivingEffect() async {
-    let store = TestStore(
+    let store = await TestStore(
       initialState: SharedFeature.State(
         profile: Shared(Profile(stats: Shared(Stats()))),
         sharedCount: Shared(0),
@@ -225,7 +267,7 @@ final class SharedTests: XCTestCase {
       $0.mainQueue = .immediate
     }
     await store.send(.longLivingEffect).finish()
-    store.assert {
+    await store.assert {
       $0.sharedCount = 1
     }
   }
@@ -245,7 +287,7 @@ final class SharedTests: XCTestCase {
     }
     XCTExpectFailure {
       $0.compactDescription == """
-        Test store finished before asserting against changes to shared state: …
+        failed - Test store finished before asserting against changes to shared state: …
 
               SharedFeature.State(
                 _count: 0,
@@ -279,7 +321,7 @@ final class SharedTests: XCTestCase {
     }
     XCTExpectFailure {
       $0.compactDescription == """
-        A state change does not match expectation: …
+        failed - A state change does not match expectation: …
 
               SharedFeature.State(
                 _count: 0,
@@ -299,7 +341,6 @@ final class SharedTests: XCTestCase {
     }
   }
 
-  @MainActor
   func testComplexSharedEffect_ReducerMutation() async {
     struct Feature: Reducer {
       struct State: Equatable {
@@ -332,7 +373,7 @@ final class SharedTests: XCTestCase {
       }
     }
     let mainQueue = DispatchQueue.test
-    let store = TestStore(initialState: Feature.State(count: Shared(0))) {
+    let store = await TestStore(initialState: Feature.State(count: Shared(0))) {
       Feature()
     } withDependencies: {
       $0.mainQueue = mainQueue.eraseToAnyScheduler()
@@ -346,7 +387,6 @@ final class SharedTests: XCTestCase {
     await mainQueue.advance(by: .seconds(1))
   }
 
-  @MainActor
   func testComplexSharedEffect_EffectMutation() async {
     struct Feature: Reducer {
       struct State: Equatable {
@@ -365,7 +405,7 @@ final class SharedTests: XCTestCase {
           case .startTimer:
             return .run { [count = state.$count] send in
               for await _ in self.queue.timer(interval: .seconds(1)) {
-                count.wrappedValue += 1
+                await count.withLock { $0 += 1 }
                 await send(.timerTick)
               }
             }
@@ -376,7 +416,7 @@ final class SharedTests: XCTestCase {
               .run { [count = state.$count] _ in
                 Task {
                   try await self.queue.sleep(for: .seconds(1))
-                  count.wrappedValue = 42
+                  await count.withLock { $0 = 42 }
                 }
               }
             )
@@ -387,7 +427,7 @@ final class SharedTests: XCTestCase {
       }
     }
     let mainQueue = DispatchQueue.test
-    let store = TestStore(initialState: Feature.State(count: Shared(0))) {
+    let store = await TestStore(initialState: Feature.State(count: Shared(0))) {
       Feature()
     } withDependencies: {
       $0.mainQueue = mainQueue.eraseToAnyScheduler()
@@ -399,7 +439,7 @@ final class SharedTests: XCTestCase {
     }
     await store.send(.stopTimer)
     await mainQueue.advance(by: .seconds(1))
-    store.assert {
+    await store.assert {
       $0.count = 42
     }
   }
@@ -433,7 +473,7 @@ final class SharedTests: XCTestCase {
 
     XCTExpectFailure {
       $0.compactDescription == """
-        State was not expected to change, but a change occurred: …
+        failed - State was not expected to change, but a change occurred: …
 
               SimpleFeature.State(
             −   _count: #1 0
@@ -495,7 +535,7 @@ final class SharedTests: XCTestCase {
     }
     XCTExpectFailure {
       $0.compactDescription == """
-        Expected changes, but none occurred.
+        failed - Expected changes, but none occurred.
         """
     }
     store.state.$count.assert {
@@ -631,16 +671,16 @@ final class SharedTests: XCTestCase {
       await store.send(.incrementValue) {
         $0.value = 1
       }
-      await store.receive(\.children[id:0].response) {
+      await store.receive(\.children[id: 0].response) {
         $0.children[id: 0]?.text = "1"
       }
-      await store.receive(\.children[id:1].response) {
+      await store.receive(\.children[id: 1].response) {
         $0.children[id: 1]?.text = "1"
       }
-      await store.receive(\.children[id:2].response) {
+      await store.receive(\.children[id: 2].response) {
         $0.children[id: 2]?.text = "1"
       }
-      await store.receive(\.children[id:3].response) {
+      await store.receive(\.children[id: 3].response) {
         $0.children[id: 3]?.text = "1"
       }
     }
@@ -669,24 +709,25 @@ final class SharedTests: XCTestCase {
     }
   }
 
-  @MainActor
-  func testObserveWithPrintChanges() async {
-    let store = TestStore(initialState: SimpleFeature.State(count: Shared(0))) {
-      SimpleFeature()._printChanges()
-    }
+  #if canImport(UIKit)
+    @MainActor
+    func testObserveWithPrintChanges() async {
+      let store = TestStore(initialState: SimpleFeature.State(count: Shared(0))) {
+        SimpleFeature()._printChanges()
+      }
 
-    var observations: [Int] = []
-    observe {
-      observations.append(store.state.count)
-    }
+      var observations: [Int] = []
+      observe {
+        observations.append(store.state.count)
+      }
 
-    XCTAssertEqual(observations, [0])
-    await store.send(.incrementInReducer) {
-      dump($0.$count)
-      $0.count += 1
+      XCTAssertEqual(observations, [0])
+      await store.send(.incrementInReducer) {
+        $0.count += 1
+      }
+      XCTAssertEqual(observations, [0, 1])
     }
-    XCTAssertEqual(observations, [0, 1])
-  }
+  #endif
 
   func testSharedDefaults_UseDefault() {
     @Shared(.isOn) var isOn
@@ -698,7 +739,7 @@ final class SharedTests: XCTestCase {
     XCTAssertEqual(isOn, true)
   }
 
-  func testSharedDefaults_MultipleWithDifferentDefaults() async throws {
+  func testSharedDefaults_MultipleWithDifferentDefaults() {
     @Shared(.isOn) var isOn1
     @Shared(.isOn) var isOn2 = true
     @Shared(.appStorage("isOn")) var isOn3 = true
@@ -725,7 +766,7 @@ final class SharedTests: XCTestCase {
 
   func testSharedDefaults_Used() {
     let didAccess = LockIsolated(false)
-    let logDefault: () -> Bool = {
+    let logDefault: @Sendable () -> Bool = {
       didAccess.setValue(true)
       return true
     }
@@ -736,7 +777,7 @@ final class SharedTests: XCTestCase {
 
   func testSharedDefaults_Unused() {
     let didAccess = LockIsolated(false)
-    let logDefault: () -> Bool = {
+    let logDefault: @Sendable () -> Bool = {
       didAccess.setValue(true)
       return true
     }
@@ -765,7 +806,7 @@ final class SharedTests: XCTestCase {
   func testSharedOverrideDefault() {
     let accessedActive1 = LockIsolated(false)
     let accessedDefault = LockIsolated(false)
-    let logDefault: () -> Bool = {
+    let logDefault: @Sendable () -> Bool = {
       accessedDefault.setValue(true)
       return true
     }
@@ -800,7 +841,7 @@ final class SharedTests: XCTestCase {
   func testSharedReaderOverrideDefault() {
     let accessedActive1 = LockIsolated(false)
     let accessedDefault = LockIsolated(false)
-    let logDefault: () -> Bool = {
+    let logDefault: @Sendable () -> Bool = {
       accessedDefault.setValue(true)
       return true
     }
@@ -823,7 +864,7 @@ final class SharedTests: XCTestCase {
     try XCTAssertThrowsError(SharedReader(.noDefaultIsOn))
   }
 
-  func testSharedReaderDefaults_MultipleWithDifferentDefaults() async throws {
+  func testSharedReaderDefaults_MultipleWithDifferentDefaults() {
     @Shared(.appStorage("isOn")) var isOn = false
     @SharedReader(.isOn) var isOn1
     @SharedReader(.isOn) var isOn2 = true
@@ -935,6 +976,134 @@ final class SharedTests: XCTestCase {
     XCTAssertEqual(count, count)
     XCTAssertEqual(count.wrappedValue, count.wrappedValue)
   }
+
+  func testDefaultVersusValueInExternalStorage() async {
+    @Dependency(\.defaultAppStorage) var userDefaults
+    userDefaults.set(true, forKey: "optionalValueWithDefault")
+
+    @Shared(.optionalValueWithDefault) var optionalValueWithDefault
+
+    XCTAssertNotNil(optionalValueWithDefault)
+
+    await $optionalValueWithDefault.withLock { $0 = nil }
+
+    XCTAssertNil(optionalValueWithDefault)
+  }
+
+  func testElements() {
+    struct User: Equatable, Identifiable {
+      let id: Int
+      var name = ""
+    }
+    let sharedCollection = Shared([User(id: 1), User(id: 2)] as IdentifiedArrayOf<User>)
+    let elements = sharedCollection.elements
+    let first = elements.first!
+    let second = elements.last!
+
+    first.wrappedValue.name = "Blob"
+    second.wrappedValue.name = "Blob Jr"
+    expectNoDifference(first.wrappedValue, User(id: 1, name: "Blob"))
+    expectNoDifference(second.wrappedValue, User(id: 2, name: "Blob Jr"))
+    expectNoDifference(
+      sharedCollection.wrappedValue,
+      [
+        User(id: 1, name: "Blob"),
+        User(id: 2, name: "Blob Jr"),
+      ]
+    )
+
+    sharedCollection.wrappedValue.swapAt(0, 1)
+    expectNoDifference(first.wrappedValue, User(id: 1, name: "Blob"))
+    expectNoDifference(second.wrappedValue, User(id: 2, name: "Blob Jr"))
+    expectNoDifference(
+      sharedCollection.wrappedValue,
+      [
+        User(id: 2, name: "Blob Jr"),
+        User(id: 1, name: "Blob"),
+      ]
+    )
+
+    first.wrappedValue.name += ", M.D."
+    second.wrappedValue.name += ", Esq."
+    expectNoDifference(first.wrappedValue, User(id: 1, name: "Blob, M.D."))
+    expectNoDifference(second.wrappedValue, User(id: 2, name: "Blob Jr, Esq."))
+    expectNoDifference(
+      sharedCollection.wrappedValue,
+      [
+        User(id: 2, name: "Blob Jr, Esq."),
+        User(id: 1, name: "Blob, M.D."),
+      ]
+    )
+  }
+
+  @available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *)
+  func testConcurrentPublisherAccess() async {
+    let sharedCount = Shared<Int>(0)
+    await withTaskGroup(of: Void.self) { group in
+      for _ in 0..<1_000 {
+        group.addTask {
+          for await _ in sharedCount.publisher.values.prefix(0) {}
+        }
+      }
+    }
+  }
+
+  func testReEntrantSharedSubscriptionDependencyResolution() async throws {
+    for _ in 1...10 {
+      try await withDependencies {
+        $0 = DependencyValues()
+      } operation: {
+        @Shared(.appStorage("count")) var count = 0
+
+        struct Client: TestDependencyKey {
+          init() {
+            @Dependency(\.defaultAppStorage) var userDefaults
+            userDefaults.set(42, forKey: "count")
+          }
+          static var testValue: Self { Self() }
+        }
+
+        withEscapedDependencies { dependencies in
+          DispatchQueue.global().async {
+            dependencies.yield {
+              XCTAssertEqual({ Thread.isMainThread }(), false)
+              @Dependency(Client.self) var client
+              _ = client
+            }
+          }
+          DispatchQueue.main.async { [sharedCount = $count] in
+            dependencies.yield {
+              XCTAssertEqual({ Thread.isMainThread }(), true)
+              _ = sharedCount.wrappedValue
+            }
+          }
+        }
+
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        XCTAssertEqual(count, 42)
+      }
+    }
+  }
+
+  func testPersistenceKeySubscription() async throws {
+    let persistenceKey: AppStorageKey<Int> = .appStorage("shared")
+    let changes = LockIsolated<[Int?]>([])
+    var subscription: Optional = persistenceKey.subscribe(initialValue: nil) { value in
+      changes.withValue { $0.append(value) }
+    }
+    @Dependency(\.defaultAppStorage) var userDefaults
+    userDefaults.set(1, forKey: "shared")
+    userDefaults.set(42, forKey: "shared")
+    subscription?.cancel()
+    userDefaults.set(123, forKey: "shared")
+    subscription = nil
+    XCTAssertEqual([1, 42], changes.value)
+    XCTAssertEqual(123, persistenceKey.load(initialValue: nil))
+  }
+}
+
+@globalActor actor GA: GlobalActor {
+  static let shared = GA()
 }
 
 @Reducer
@@ -961,18 +1130,28 @@ private struct SharedFeature {
     }
   }
   enum Action {
+    case delegate(Delegate)
     case increment
     case incrementStats
+    case incrementSharedInDelegate
     case longLivingEffect
     case noop
     case request
     case sharedIncrement
     case toggleIsOn
+    @CasePathable
+    enum Delegate {
+      case didIncrement
+    }
   }
   @Dependency(\.mainQueue) var mainQueue
   var body: some ReducerOf<Self> {
     Reduce { state, action in
       switch action {
+      case .delegate(.didIncrement):
+        state.count += 1
+        state.stats.count += 1
+        return .none
       case .increment:
         state.count += 1
         return .none
@@ -980,10 +1159,12 @@ private struct SharedFeature {
         state.profile.stats.count += 1
         state.stats.count += 1
         return .none
+      case .incrementSharedInDelegate:
+        return .send(.delegate(.didIncrement))
       case .longLivingEffect:
         return .run { [sharedCount = state.$sharedCount] _ in
           try await self.mainQueue.sleep(for: .seconds(1))
-          sharedCount.wrappedValue += 1
+          await sharedCount.withLock { $0 += 1 }
         }
       case .noop:
         return .none
@@ -1022,7 +1203,7 @@ private struct SimpleFeature {
       switch action {
       case .incrementInEffect:
         return .run { [count = state.$count] _ in
-          count.wrappedValue += 1
+          await count.withLock { $0 += 1 }
         }
       case .incrementInReducer:
         state.count += 1
@@ -1033,7 +1214,7 @@ private struct SimpleFeature {
 }
 
 @Perceptible
-class SharedObject {
+class SharedObject: @unchecked Sendable {
   var count = 0
 }
 
@@ -1059,8 +1240,8 @@ private struct RowFeature {
         return .none
 
       case .onAppear:
-        return .publisher { [publisher = state.$value.publisher] in
-          publisher
+        return .publisher {
+          state.$value.publisher
             .map(Action.response)
             .prefix(1)
         }
@@ -1136,7 +1317,7 @@ extension PersistenceReaderKey where Self == PersistenceKeyDefault<AppStorageKey
     PersistenceKeyDefault(.appStorage("isOn"), false)
   }
 
-  static func isActive(default keyDefault: @escaping () -> Bool) -> Self {
+  static func isActive(default keyDefault: @escaping @Sendable () -> Bool) -> Self {
     PersistenceKeyDefault(.appStorage("isActive"), keyDefault())
   }
 }

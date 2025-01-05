@@ -4,10 +4,11 @@
 
 ### Storing a value
 
-- ``PersistenceReaderKey/fileStorage(_:)``
+- ``PersistenceReaderKey/fileStorage(_:decoder:encoder:)``
 
 ### Overriding storage
 
+- ``Dependencies/DependencyValues/defaultFileStorage``
 - ``FileStorage``
 
 ### Deprecations

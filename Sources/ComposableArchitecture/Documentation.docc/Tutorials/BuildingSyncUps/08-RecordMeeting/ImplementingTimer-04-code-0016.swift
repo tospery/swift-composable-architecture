@@ -1,11 +1,12 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import SyncUps
 
-final class RecordMeetingTests: XCTestCase {
-  @MainActor
-  func testTimerFinishes() async {
+@MainActor
+struct RecordMeetingTests {
+  @Test
+  func timerFinishes() async {
     let clock = TestClock()
     let syncUp = SyncUp(
       id: SyncUp.ID(),
@@ -24,6 +25,7 @@ final class RecordMeetingTests: XCTestCase {
       $0.continuousClock = clock
       $0.date.now = Date(timeIntervalSince1970: 1234567890)
       $0.uuid = .incrementing
+      $0.dismiss = DismissEffect {}
     }
 
     let onAppearTask = await store.send(.onAppear)

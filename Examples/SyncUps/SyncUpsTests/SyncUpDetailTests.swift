@@ -1,11 +1,14 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import SyncUps
 
-final class SyncUpDetailTests: XCTestCase {
-  @MainActor
-  func testSpeechRestricted() async {
+@MainActor
+struct SyncUpDetailTests {
+  init() { uncheckedUseMainSerialExecutor = true }
+
+  @Test
+  func speechRestricted() async {
     let store = TestStore(initialState: SyncUpDetail.State(syncUp: Shared(.mock))) {
       SyncUpDetail()
     } withDependencies: {
@@ -17,8 +20,8 @@ final class SyncUpDetailTests: XCTestCase {
     }
   }
 
-  @MainActor
-  func testSpeechDenied() async throws {
+  @Test
+  func speechDenied() async throws {
     let store = TestStore(initialState: SyncUpDetail.State(syncUp: Shared(.mock))) {
       SyncUpDetail()
     } withDependencies: {
@@ -32,8 +35,8 @@ final class SyncUpDetailTests: XCTestCase {
     }
   }
 
-  @MainActor
-  func testOpenSettings() async {
+  @Test
+  func openSettings() async {
     let settingsOpened = LockIsolated(false)
 
     let store = TestStore(
@@ -51,11 +54,11 @@ final class SyncUpDetailTests: XCTestCase {
     await store.send(\.destination.alert.openSettings) {
       $0.destination = nil
     }
-    XCTAssertEqual(settingsOpened.value, true)
+    #expect(settingsOpened.value)
   }
 
-  @MainActor
-  func testContinueWithoutRecording() async throws {
+  @Test
+  func continueWithoutRecording() async throws {
     let store = TestStore(
       initialState: SyncUpDetail.State(
         destination: .alert(.speechRecognitionDenied),
@@ -74,8 +77,8 @@ final class SyncUpDetailTests: XCTestCase {
     await store.receive(\.delegate.startMeeting)
   }
 
-  @MainActor
-  func testSpeechAuthorized() async throws {
+  @Test
+  func speechAuthorized() async throws {
     let store = TestStore(initialState: SyncUpDetail.State(syncUp: Shared(.mock))) {
       SyncUpDetail()
     } withDependencies: {
@@ -87,8 +90,8 @@ final class SyncUpDetailTests: XCTestCase {
     await store.receive(\.delegate.startMeeting)
   }
 
-  @MainActor
-  func testEdit() async {
+  @Test
+  func edit() async {
     var syncUp = SyncUp.mock
     let store = TestStore(initialState: SyncUpDetail.State(syncUp: Shared(syncUp))) {
       SyncUpDetail()
@@ -102,7 +105,7 @@ final class SyncUpDetailTests: XCTestCase {
 
     syncUp.title = "Blob's Meeting"
     await store.send(\.destination.edit.binding.syncUp, syncUp) {
-      $0.destination?.edit?.syncUp.title = "Blob's Meeting"
+      $0.destination?.modify(\.edit) { $0.syncUp.title = "Blob's Meeting" }
     }
 
     await store.send(.doneEditingButtonTapped) {
@@ -111,24 +114,23 @@ final class SyncUpDetailTests: XCTestCase {
     }
   }
 
-  @MainActor
-  func testDelete() async throws {
+  @Test
+  func delete() async throws {
     let syncUp = SyncUp.mock
     @Shared(.syncUps) var syncUps = [syncUp]
     // TODO: Can this exhaustively be caught?
-    defer { XCTAssertEqual([], syncUps) }
+    defer { #expect(syncUps == []) }
 
-    let sharedSyncUp = try XCTUnwrap($syncUps[id: syncUp.id])
+    let sharedSyncUp = try #require(Shared($syncUps[id: syncUp.id]))
     let store = TestStore(initialState: SyncUpDetail.State(syncUp: sharedSyncUp)) {
       SyncUpDetail()
     }
-    defer { XCTAssert(store.isDismissed) }
-
     await store.send(.deleteButtonTapped) {
       $0.destination = .alert(.deleteSyncUp)
     }
     await store.send(\.destination.alert.confirmDeletion) {
       $0.destination = nil
     }
+    #expect(store.isDismissed)
   }
 }

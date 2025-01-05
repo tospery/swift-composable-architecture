@@ -136,7 +136,7 @@ extension TypeSyntax {
         genericParameters[parameter.name.text] = parameter.inheritedType
       }
     }
-    var iterator = self.asProtocol(TypeSyntaxProtocol.self).tokens(viewMode: .sourceAccurate)
+    var iterator = self.asProtocol((any TypeSyntaxProtocol).self).tokens(viewMode: .sourceAccurate)
       .makeIterator()
     guard let base = iterator.next() else {
       return nil
@@ -282,5 +282,17 @@ extension DeclGroupSyntax {
 
   var isStruct: Bool {
     return self.is(StructDeclSyntax.self)
+  }
+}
+
+extension AttributedTypeSyntax {
+  var isInout: Bool {
+    #if canImport(SwiftSyntax600)
+      self.specifiers.contains(
+        where: { $0.as(SimpleTypeSpecifierSyntax.self)?.specifier.tokenKind == .keyword(.inout) }
+      ) == true
+    #else
+      self.specifier?.tokenKind == .keyword(.inout)
+    #endif
   }
 }
