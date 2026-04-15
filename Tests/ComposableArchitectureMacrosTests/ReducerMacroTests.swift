@@ -6,7 +6,7 @@
   final class ReducerMacroTests: XCTestCase {
     override func invokeTest() {
       withMacroTesting(
-        // isRecording: true,
+        // record: .failed,
         macros: [ReducerMacro.self]
       ) {
         super.invokeTest()
@@ -174,14 +174,6 @@
           func reduce(into state: inout State, action: Action) -> EffectOf<Self> {
             .none
           }
-          var body: some ReducerOf<Self> {
-            Reduce(reduce)
-            Reduce(reduce(into:action:))
-            Reduce(self.reduce)
-            Reduce(self.reduce(into:action:))
-            Reduce(AnotherReducer().reduce)
-            Reduce(AnotherReducer().reduce(into:action:))
-          }
         }
         """
       } diagnostics: {
@@ -194,17 +186,44 @@
           }
           func reduce(into state: inout State, action: Action) -> EffectOf<Self> {
                ┬─────
-               ╰─ 🛑 A 'reduce' method should not be defined in a reducer with a 'body'; it takes precedence and 'body' will never be invoked
+               ╰─ ⚠️ 'reduce(into:action:)' is deprecated: Reducers should be defined using the 'body' property and a 'Reduce'.
+                  ✏️ Use 'body' instead
             .none
           }
-          var body: some ReducerOf<Self> {
-            Reduce(reduce)
-            Reduce(reduce(into:action:))
-            Reduce(self.reduce)
-            Reduce(self.reduce(into:action:))
-            Reduce(AnotherReducer().reduce)
-            Reduce(AnotherReducer().reduce(into:action:))
+        }
+        """
+      } fixes: {
+        """
+        @Reducer
+        struct Feature {
+          struct State {
           }
+          enum Action {
+          }
+          var body: some Reducer<State, Action> {
+        Reduce { state, action in
+        .none
+        }
+        }
+        }
+        """
+      } expansion: {
+        """
+        struct Feature {
+          struct State {
+          }
+          @CasePathable
+          enum Action {
+          }
+          @ComposableArchitecture.ReducerBuilder<State, Action>
+          var body: some Reducer<State, Action> {
+        Reduce { state, action in
+        .none
+        }
+        }
+        }
+
+        extension Feature: ComposableArchitecture.Reducer {
         }
         """
       }
@@ -238,15 +257,24 @@
                 ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
             }
 
-            enum CaseScope {
+            @dynamicMemberLookup
+            enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
 
+                struct AllCasePaths {
+
+                }
+                static var allCasePaths: AllCasePaths {
+                    AllCasePaths()
+                }
             }
 
+            @preconcurrency @MainActor
             static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
                 switch store.state {
 
                 }
-            }}
+            }
+        }
 
         extension Destination: ComposableArchitecture.CaseReducer, ComposableArchitecture.Reducer {
         }
@@ -298,29 +326,83 @@
             case activity(Activity.Action)
             case timeline(Timeline.Action)
             case tweet(Tweet.Action)
-            case alert(AlertState<Alert> .Action)
+            case alert(Alert)
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Activity>, ComposableArchitecture.Scope<Self.State, Self.Action, Timeline>>, ComposableArchitecture.Scope<Self.State, Self.Action, Tweet>> {
-            ComposableArchitecture.Scope(state: \Self.State.Cases.activity, action: \Self.Action.Cases.activity) {
-              Activity()
-            }
-            ComposableArchitecture.Scope(state: \Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
-              Timeline()
-            }
-            ComposableArchitecture.Scope(state: \Self.State.Cases.tweet, action: \Self.Action.Cases.tweet) {
-              Tweet()
-            }
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.activity, action: \Self.Action.Cases.activity) {
+                Activity()
+              }
+              .ifCaseLet(\Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
+                Timeline()
+              }
+              .ifCaseLet(\Self.State.Cases.tweet, action: \Self.Action.Cases.tweet) {
+                Tweet()
+              }
+            )
           }
 
-          enum CaseScope {
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
             case activity(ComposableArchitecture.StoreOf<Activity>)
             case timeline(ComposableArchitecture.StoreOf<Timeline>)
             case tweet(ComposableArchitecture.StoreOf<Tweet>)
             case alert(AlertState<Alert>)
+            struct AllCasePaths {
+              var activity: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Activity>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.activity,
+                  extract: {
+                    guard case let .activity(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var timeline: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Timeline>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.timeline,
+                  extract: {
+                    guard case let .timeline(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var tweet: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Tweet>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.tweet,
+                  extract: {
+                    guard case let .tweet(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var alert: CasePaths.AnyCasePath<CaseScope, AlertState<Alert>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.alert,
+                  extract: {
+                    guard case let .alert(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
           }
 
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .activity:
@@ -372,20 +454,52 @@
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Timeline>, ComposableArchitecture.Scope<Self.State, Self.Action, Meeting>> {
-            ComposableArchitecture.Scope(state: \Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
-              Timeline()
-            }
-            ComposableArchitecture.Scope(state: \Self.State.Cases.meeting, action: \Self.Action.Cases.meeting) {
-              Meeting(context: .sheet)
-            }
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
+                Timeline()
+              }
+              .ifCaseLet(\Self.State.Cases.meeting, action: \Self.Action.Cases.meeting) {
+                Meeting(context: .sheet)
+              }
+            )
           }
 
-          enum CaseScope {
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
             case timeline(ComposableArchitecture.StoreOf<Timeline>)
             case meeting(ComposableArchitecture.StoreOf<Meeting>)
+            struct AllCasePaths {
+              var timeline: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Timeline>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.timeline,
+                  extract: {
+                    guard case let .timeline(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var meeting: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Meeting>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.meeting,
+                  extract: {
+                    guard case let .meeting(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
           }
 
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .timeline:
@@ -431,10 +545,18 @@
                 ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
             }
 
-            enum CaseScope {
+            @dynamicMemberLookup
+            enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
 
+                struct AllCasePaths {
+
+                }
+                static var allCasePaths: AllCasePaths {
+                    AllCasePaths()
+                }
             }
 
+            @preconcurrency @MainActor
             static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
                 switch store.state {
 
@@ -481,9 +603,21 @@
                 ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
             }
 
-            package enum CaseScope {
+            @dynamicMemberLookup
 
+            package enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
+
+
+                package struct AllCasePaths {
+
+                }
+
+                package static var allCasePaths: AllCasePaths {
+                    AllCasePaths()
+                }
             }
+
+            @preconcurrency @MainActor
 
             package static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
                 switch store.state {
@@ -531,9 +665,21 @@
                 ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
             }
 
-            public enum CaseScope {
+            @dynamicMemberLookup
 
+            public enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
+
+
+                public struct AllCasePaths {
+
+                }
+
+                public static var allCasePaths: AllCasePaths {
+                    AllCasePaths()
+                }
             }
+
+            @preconcurrency @MainActor
 
             public static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
                 switch store.state {
@@ -572,7 +718,7 @@
 
           @CasePathable
           enum Action {
-            case alert(AlertState<Never> .Action)
+            case alert(Never)
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
@@ -580,10 +726,28 @@
             ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
           }
 
-          enum CaseScope {
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
             case alert(AlertState<Never>)
+            struct AllCasePaths {
+              var alert: CasePaths.AnyCasePath<CaseScope, AlertState<Never>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.alert,
+                  extract: {
+                    guard case let .alert(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
           }
 
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case let .alert(v0):
@@ -629,21 +793,154 @@
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Activity>, ComposableArchitecture.Scope<Self.State, Self.Action, Timeline>> {
-            ComposableArchitecture.Scope(state: \Self.State.Cases.activity, action: \Self.Action.Cases.activity) {
-              Activity()
-            }
-            ComposableArchitecture.Scope(state: \Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
-              Timeline()
-            }
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.activity, action: \Self.Action.Cases.activity) {
+                Activity()
+              }
+              .ifCaseLet(\Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
+                Timeline()
+              }
+            )
           }
 
-          enum CaseScope {
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
             case activity(ComposableArchitecture.StoreOf<Activity>)
             case timeline(ComposableArchitecture.StoreOf<Timeline>)
+            struct AllCasePaths {
+              var activity: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Activity>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.activity,
+                  extract: {
+                    guard case let .activity(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var timeline: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Timeline>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.timeline,
+                  extract: {
+                    guard case let .timeline(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
           }
 
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
+            switch store.state {
+            case .activity:
+              return .activity(store.scope(state: \.activity, action: \.activity)!)
+            case .timeline:
+              return .timeline(store.scope(state: \.timeline, action: \.timeline)!)
+            }
+          }
+        }
+
+        extension Destination: ComposableArchitecture.CaseReducer, ComposableArchitecture.Reducer {
+        }
+        """#
+      }
+    }
+
+    func testEnum_TwoCases_AccessControl_Public() {
+      assertMacro {
+        """
+        @Reducer
+        public enum Destination {
+          case activity(Activity)
+          case timeline(Timeline)
+        }
+        """
+      } expansion: {
+        #"""
+        public enum Destination {
+          case activity(Activity)
+          case timeline(Timeline)
+
+          @CasePathable
+          @dynamicMemberLookup
+          @ObservableState
+
+          public enum State: ComposableArchitecture.CaseReducerState {
+
+            public typealias StateReducer = Destination
+            case activity(Activity.State)
+            case timeline(Timeline.State)
+          }
+
+          @CasePathable
+
+          public enum Action {
+            case activity(Activity.Action)
+            case timeline(Timeline.Action)
+          }
+
+          @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
+
+          public static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.activity, action: \Self.Action.Cases.activity) {
+                Activity()
+              }
+              .ifCaseLet(\Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
+                Timeline()
+              }
+            )
+          }
+
+          @dynamicMemberLookup
+
+          public enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
+            case activity(ComposableArchitecture.StoreOf<Activity>)
+            case timeline(ComposableArchitecture.StoreOf<Timeline>)
+
+            public struct AllCasePaths {
+              public var activity: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Activity>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.activity,
+                  extract: {
+                    guard case let .activity(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              public var timeline: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Timeline>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.timeline,
+                  extract: {
+                    guard case let .timeline(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+
+            public static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
+          }
+
+          @preconcurrency @MainActor
+
+          public static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .activity:
               return .activity(store.scope(state: \.activity, action: \.activity)!)
@@ -692,23 +989,151 @@
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.Scope<Self.State, Self.Action, Timeline> {
-            ComposableArchitecture.Scope(state: \Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
-              Timeline()
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.timeline, action: \Self.Action.Cases.timeline) {
+                Timeline()
+              }
+            )
+          }
+
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
+            case timeline(ComposableArchitecture.StoreOf<Timeline>)
+            case meeting(Meeting)
+            struct AllCasePaths {
+              var timeline: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Timeline>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.timeline,
+                  extract: {
+                    guard case let .timeline(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var meeting: CasePaths.AnyCasePath<CaseScope, Meeting> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.meeting,
+                  extract: {
+                    guard case let .meeting(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
             }
           }
 
-          enum CaseScope {
-            case timeline(ComposableArchitecture.StoreOf<Timeline>)
-            case meeting(Meeting)
-          }
-
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .timeline:
               return .timeline(store.scope(state: \.timeline, action: \.timeline)!)
             case let .meeting(v0):
               return .meeting(v0)
+            }
+          }
+        }
+
+        extension Destination: ComposableArchitecture.CaseReducer, ComposableArchitecture.Reducer {
+        }
+        """#
+      }
+    }
+
+    func testEnum_CaseIgnoredExplicitActions() {
+      assertMacro {
+        """
+        @Reducer
+        enum Destination {
+          @ReducerCaseIgnored case alert(AlertState<Alert>)
+          case settings(Settings)
+
+          enum Action {
+            case alert(Alert)
+            case settings(Settings.Action)
+          }
+        }
+        """
+      } expansion: {
+        #"""
+        enum Destination {
+          @ReducerCaseIgnored
+          @ReducerCaseEphemeral case alert(AlertState<Alert>)
+          case settings(Settings)
+          @CasePathable
+
+          enum Action {
+            case alert(Alert)
+            case settings(Settings.Action)
+          }
+
+          @CasePathable
+          @dynamicMemberLookup
+          @ObservableState
+          enum State: ComposableArchitecture.CaseReducerState {
+            typealias StateReducer = Destination
+            case alert(AlertState<Alert>)
+            case settings(Settings.State)
+          }
+
+          @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.settings, action: \Self.Action.Cases.settings) {
+                Settings()
+              }
+            )
+          }
+
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
+            case alert(ComposableArchitecture.Store<AlertState<Alert>, Alert>)
+            case settings(ComposableArchitecture.StoreOf<Settings>)
+            struct AllCasePaths {
+              var alert: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.Store<AlertState<Alert>, Alert>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.alert,
+                  extract: {
+                    guard case let .alert(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var settings: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Settings>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.settings,
+                  extract: {
+                    guard case let .settings(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
+          }
+
+          @preconcurrency @MainActor
+          static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
+            switch store.state {
+            case .alert:
+              return .alert(store.scope(state: \.alert, action: \.alert)!)
+            case .settings:
+              return .settings(store.scope(state: \.settings, action: \.settings)!)
             }
           }
         }
@@ -751,8 +1176,8 @@
 
           @CasePathable
           enum Action {
-            case alert(AlertState<Alert> .Action)
-            case dialog(ConfirmationDialogState<Dialog> .Action)
+            case alert(Alert)
+            case dialog(Dialog)
             case meeting(Swift.Never)
           }
 
@@ -761,12 +1186,42 @@
             ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
           }
 
-          enum CaseScope {
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
             case alert(AlertState<Alert>)
             case dialog(ConfirmationDialogState<Dialog>)
             case meeting(Meeting, syncUp: SyncUp)
+            struct AllCasePaths {
+              var alert: CasePaths.AnyCasePath<CaseScope, AlertState<Alert>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.alert,
+                  extract: {
+                    guard case let .alert(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var dialog: CasePaths.AnyCasePath<CaseScope, ConfirmationDialogState<Dialog>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.dialog,
+                  extract: {
+                    guard case let .dialog(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
           }
 
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case let .alert(v0):
@@ -820,24 +1275,67 @@
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.ReducerBuilder<Self.State, Self.Action> ._Sequence<ComposableArchitecture.Scope<Self.State, Self.Action, Counter>, ComposableArchitecture.Scope<Self.State, Self.Action, Counter>>, ComposableArchitecture.Scope<Self.State, Self.Action, Counter>> {
-            ComposableArchitecture.Scope(state: \Self.State.Cases.drillDown, action: \Self.Action.Cases.drillDown) {
-              Counter()
-            }
-            ComposableArchitecture.Scope(state: \Self.State.Cases.popover, action: \Self.Action.Cases.popover) {
-              Counter()
-            }
-            ComposableArchitecture.Scope(state: \Self.State.Cases.sheet, action: \Self.Action.Cases.sheet) {
-              Counter()
-            }
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.drillDown, action: \Self.Action.Cases.drillDown) {
+                Counter()
+              }
+              .ifCaseLet(\Self.State.Cases.popover, action: \Self.Action.Cases.popover) {
+                Counter()
+              }
+              .ifCaseLet(\Self.State.Cases.sheet, action: \Self.Action.Cases.sheet) {
+                Counter()
+              }
+            )
           }
 
-          enum CaseScope {
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
             case drillDown(ComposableArchitecture.StoreOf<Counter>)
             case popover(ComposableArchitecture.StoreOf<Counter>)
             case sheet(ComposableArchitecture.StoreOf<Counter>)
+            struct AllCasePaths {
+              var drillDown: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Counter>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.drillDown,
+                  extract: {
+                    guard case let .drillDown(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var popover: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Counter>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.popover,
+                  extract: {
+                    guard case let .popover(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var sheet: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Counter>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.sheet,
+                  extract: {
+                    guard case let .sheet(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
           }
 
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .drillDown:
@@ -883,16 +1381,37 @@
           }
 
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
-          static var body: ComposableArchitecture.Scope<Self.State, Self.Action, Nested.Feature> {
-            ComposableArchitecture.Scope(state: \Self.State.Cases.feature, action: \Self.Action.Cases.feature) {
-              Nested.Feature()
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.feature, action: \Self.Action.Cases.feature) {
+                Nested.Feature()
+              }
+            )
+          }
+
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
+            case feature(ComposableArchitecture.StoreOf<Nested.Feature>)
+            struct AllCasePaths {
+              var feature: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<Nested.Feature>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.feature,
+                  extract: {
+                    guard case let .feature(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
             }
           }
 
-          enum CaseScope {
-            case feature(ComposableArchitecture.StoreOf<Nested.Feature>)
-          }
-
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .feature:
@@ -1033,30 +1552,6 @@
       }
     }
 
-    func testFilledRequirements_ReduceMethod() {
-      assertMacro {
-        """
-        @Reducer
-        struct Feature {
-          func reduce(into state: inout Base.State, action: Base.Action) -> EffectOf<Base> {
-            .none
-          }
-        }
-        """
-      } expansion: {
-        """
-        struct Feature {
-          func reduce(into state: inout Base.State, action: Base.Action) -> EffectOf<Base> {
-            .none
-          }
-        }
-
-        extension Feature: ComposableArchitecture.Reducer {
-        }
-        """
-      }
-    }
-
     func testFilledRequirements_LetBody() {
       assertMacro {
         """
@@ -1098,7 +1593,8 @@
             enum Action: Equatable, Hashable, Sendable {
             }
 
-            let body = ComposableArchitecture.EmptyReducer<State, Action>()}
+            let body = ComposableArchitecture.EmptyReducer<State, Action>()
+        }
 
         @available(iOS, unavailable) extension Feature: ComposableArchitecture.Reducer {
         }
@@ -1183,7 +1679,7 @@
             case child(ChildFeature.Action)
             #if os(macOS)
             case mac(MacFeature.Action)
-            case macAlert(AlertState<MacAlert> .Action)
+            case macAlert(MacAlert)
             #elseif os(iOS)
             case phone(PhoneFeature.Action)
             #else
@@ -1194,7 +1690,7 @@
             #if DEBUG
             #if INNER
             case inner(InnerFeature.Action)
-            case innerDialog(ConfirmationDialogState<InnerDialog> .Action)
+            case innerDialog(InnerDialog)
             #endif
             #endif
 
@@ -1203,38 +1699,37 @@
           @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
           static var body: Reduce<Self.State, Self.Action> {
             ComposableArchitecture.Reduce(
-              ComposableArchitecture.CombineReducers {
-                ComposableArchitecture.Scope(state: \Self.State.Cases.child, action: \Self.Action.Cases.child) {
-                  ChildFeature()
-                }
-                #if os(macOS)
-                ComposableArchitecture.Scope(state: \Self.State.Cases.mac, action: \Self.Action.Cases.mac) {
-                  MacFeature()
-                }
-                #elseif os(iOS)
-                ComposableArchitecture.Scope(state: \Self.State.Cases.phone, action: \Self.Action.Cases.phone) {
-                  PhoneFeature()
-                }
-                #else
-                ComposableArchitecture.Scope(state: \Self.State.Cases.other, action: \Self.Action.Cases.other) {
-                  OtherFeature()
-                }
-                #endif
-
-                #if DEBUG
-                #if INNER
-                ComposableArchitecture.Scope(state: \Self.State.Cases.inner, action: \Self.Action.Cases.inner) {
-                  InnerFeature()
-                }
-                #endif
-
-                #endif
-
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.child, action: \Self.Action.Cases.child) {
+                ChildFeature()
               }
+              #if os(macOS)
+              .ifCaseLet(\Self.State.Cases.mac, action: \Self.Action.Cases.mac) {
+                MacFeature()
+              }
+              #elseif os(iOS)
+              .ifCaseLet(\Self.State.Cases.phone, action: \Self.Action.Cases.phone) {
+                PhoneFeature()
+              }
+              #else
+              .ifCaseLet(\Self.State.Cases.other, action: \Self.Action.Cases.other) {
+                OtherFeature()
+              }
+              #endif
+
+              #if DEBUG
+              #if INNER
+              .ifCaseLet(\Self.State.Cases.inner, action: \Self.Action.Cases.inner) {
+                InnerFeature()
+              }
+              #endif
+              #endif
+
             )
           }
 
-          enum CaseScope {
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
             case child(ComposableArchitecture.StoreOf<ChildFeature>)
             #if os(macOS)
             case mac(ComposableArchitecture.StoreOf<MacFeature>)
@@ -1253,8 +1748,114 @@
             #endif
             #endif
 
+            struct AllCasePaths {
+              var child: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<ChildFeature>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.child,
+                  extract: {
+                    guard case let .child(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              #if os(macOS)
+              var mac: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<MacFeature>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.mac,
+                  extract: {
+                    guard case let .mac(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var macAlert: CasePaths.AnyCasePath<CaseScope, AlertState<MacAlert>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.macAlert,
+                  extract: {
+                    guard case let .macAlert(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              #elseif os(iOS)
+              var phone: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<PhoneFeature>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.phone,
+                  extract: {
+                    guard case let .phone(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              #else
+              var other: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<OtherFeature>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.other,
+                  extract: {
+                    guard case let .other(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var another: CasePaths.AnyCasePath<CaseScope, Void> {
+                CasePaths.AnyCasePath(
+                  embed: {
+                    CaseScope.another
+                  },
+                  extract: {
+                    guard case .another = $0 else {
+                      return nil
+                    };
+                    return ()
+                  }
+                )
+              }
+              #endif
+
+              #if DEBUG
+              #if INNER
+              var inner: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<InnerFeature>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.inner,
+                  extract: {
+                    guard case let .inner(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              var innerDialog: CasePaths.AnyCasePath<CaseScope, ConfirmationDialogState<InnerDialog>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.innerDialog,
+                  extract: {
+                    guard case let .innerDialog(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+              #endif
+              #endif
+
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
           }
 
+          @preconcurrency @MainActor
           static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
             switch store.state {
             case .child:
@@ -1281,6 +1882,104 @@
             case let .innerDialog(v0):
               return .innerDialog(v0)
             #endif
+            #endif
+
+            }
+          }
+        }
+
+        extension Feature: ComposableArchitecture.CaseReducer, ComposableArchitecture.Reducer {
+        }
+        """#
+      }
+    }
+
+    func testEnum_IfConfigPrunesEmptyBranches() {
+      assertMacro {
+        """
+        @Reducer
+        enum Feature {
+          case child(ChildFeature)
+
+          #if DEBUG
+            case value(Int, String)
+          #endif
+        }
+        """
+      } expansion: {
+        #"""
+        enum Feature {
+          case child(ChildFeature)
+
+          #if DEBUG
+            case value(Int, String)
+          #endif
+
+          @CasePathable
+          @dynamicMemberLookup
+          @ObservableState
+          enum State: ComposableArchitecture.CaseReducerState {
+            typealias StateReducer = Feature
+            case child(ChildFeature.State)
+            #if DEBUG
+            case value(Int, String)
+            #endif
+
+          }
+
+          @CasePathable
+          enum Action {
+            case child(ChildFeature.Action)
+            #if DEBUG
+            case value(Swift.Never)
+            #endif
+
+          }
+
+          @ComposableArchitecture.ReducerBuilder<Self.State, Self.Action>
+          static var body: Reduce<Self.State, Self.Action> {
+            ComposableArchitecture.Reduce(
+              ComposableArchitecture.EmptyReducer<Self.State, Self.Action>()
+              .ifCaseLet(\Self.State.Cases.child, action: \Self.Action.Cases.child) {
+                ChildFeature()
+              }
+            )
+          }
+
+          @dynamicMemberLookup
+          enum CaseScope: ComposableArchitecture._CaseScopeProtocol, CasePaths.CasePathable {
+            case child(ComposableArchitecture.StoreOf<ChildFeature>)
+            #if DEBUG
+            case value(Int, String)
+            #endif
+
+            struct AllCasePaths {
+              var child: CasePaths.AnyCasePath<CaseScope, ComposableArchitecture.StoreOf<ChildFeature>> {
+                CasePaths.AnyCasePath(
+                  embed: CaseScope.child,
+                  extract: {
+                    guard case let .child(v0) = $0 else {
+                      return nil
+                    };
+                    return v0
+                  }
+                )
+              }
+
+            }
+            static var allCasePaths: AllCasePaths {
+              AllCasePaths()
+            }
+          }
+
+          @preconcurrency @MainActor
+          static func scope(_ store: ComposableArchitecture.Store<Self.State, Self.Action>) -> CaseScope {
+            switch store.state {
+            case .child:
+              return .child(store.scope(state: \.child, action: \.child)!)
+            #if DEBUG
+            case let .value(v0, v1):
+              return .value(v0, v1)
             #endif
 
             }

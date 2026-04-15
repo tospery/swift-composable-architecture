@@ -2,6 +2,7 @@ import Combine
 @_spi(Internals) import ComposableArchitecture
 import XCTest
 
+@available(*, deprecated)
 final class EffectDebounceTests: BaseTCATestCase {
   @MainActor
   func testDebounce() async {

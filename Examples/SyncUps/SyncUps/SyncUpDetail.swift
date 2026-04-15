@@ -3,10 +3,16 @@ import SwiftUI
 
 @Reducer
 struct SyncUpDetail {
-  @Reducer(state: .equatable)
+  @Reducer
   enum Destination {
-    case alert(AlertState<Alert>)
+    @ReducerCaseIgnored case alert(AlertState<Alert>)
     case edit(SyncUpForm)
+
+    @CasePathable
+    enum Action {
+      case alert(Alert)
+      case edit(SyncUpForm.Action)
+    }
 
     @CasePathable
     enum Alert {
@@ -56,15 +62,15 @@ struct SyncUpDetail {
         state.destination = .alert(.deleteSyncUp)
         return .none
 
-      case let .deleteMeetings(atOffsets: indices):
-        state.syncUp.meetings.remove(atOffsets: indices)
+      case .deleteMeetings(atOffsets: let indices):
+        state.$syncUp.withLock { $0.meetings.remove(atOffsets: indices) }
         return .none
 
-      case let .destination(.presented(.alert(alertAction))):
+      case .destination(.presented(.alert(let alertAction))):
         switch alertAction {
         case .confirmDeletion:
           @Shared(.syncUps) var syncUps
-          syncUps.remove(id: state.syncUp.id)
+          $syncUps.withLock { _ = $0.remove(id: state.syncUp.id) }
           return .run { _ in await dismiss() }
 
         case .continueWithoutRecording:
@@ -78,9 +84,9 @@ struct SyncUpDetail {
         return .none
 
       case .doneEditingButtonTapped:
-        guard case let .some(.edit(editState)) = state.destination
+        guard case .some(.edit(let editState)) = state.destination
         else { return .none }
-        state.syncUp = editState.syncUp
+        state.$syncUp.withLock { $0 = editState.syncUp }
         state.destination = nil
         return .none
 
@@ -109,6 +115,7 @@ struct SyncUpDetail {
     .ifLet(\.$destination, action: \.destination)
   }
 }
+extension SyncUpDetail.Destination.State: Equatable {}
 
 struct SyncUpDetailView: View {
   @Bindable var store: StoreOf<SyncUpDetail>
@@ -185,9 +192,9 @@ struct SyncUpDetailView: View {
       }
     }
     .navigationTitle(store.syncUp.title)
-    .alert($store.scope(state: \.destination?.alert, action: \.destination.alert))
+    .alert($store.scope(state: \.$destination, action: \.destination).alert)
     .sheet(
-      item: $store.scope(state: \.destination?.edit, action: \.destination.edit)
+      item: $store.scope(state: \.$destination, action: \.destination).edit
     ) { editSyncUpStore in
       NavigationStack {
         SyncUpFormView(store: editSyncUpStore)
@@ -265,7 +272,7 @@ extension AlertState where Action == SyncUpDetail.Destination.Alert {
 #Preview {
   NavigationStack {
     SyncUpDetailView(
-      store: Store(initialState: SyncUpDetail.State(syncUp: Shared(.mock))) {
+      store: Store(initialState: SyncUpDetail.State(syncUp: Shared(value: .mock))) {
         SyncUpDetail()
       }
     )

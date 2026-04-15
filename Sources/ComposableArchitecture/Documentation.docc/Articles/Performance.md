@@ -19,10 +19,10 @@ This is an inefficient way to share logic. Sending actions is not as lightweight
 as, say, calling a method on a class. Actions travel through multiple layers of an application, and 
 at each layer a reducer can intercept and reinterpret the action.
 
-It is far better to share logic via simple methods on your ``Reducer`` conformance.
+It is far better to share logic via simple methods, for example on your ``Reducer`` conformance.
 The helper methods can take `inout State` as an argument if it needs to make mutations, and it
-can return an `Effect<Action>`. This allows you to share logic without incurring the cost
-of sending needless actions.
+can return an `Effect<Action>`. This allows you to share logic across a reducer without incurring
+the cost of sending needless actions.
 
 For example, suppose that there are 3 UI components in your feature such that when any is changed
 you want to update the corresponding field of state, but then you also want to make some mutations
@@ -93,7 +93,7 @@ store.send(.toggleChanged) {
 store.receive(\.sharedComputation) {
   // Assert on shared logic
 }
-store.send(.textFieldChanged("Hello") {
+store.send(.textFieldChanged("Hello")) {
   $0.description = "Hello"
 }
 store.receive(\.sharedComputation) {
@@ -184,9 +184,8 @@ store.send(.textFieldChanged("Hello") {
 ##### Sharing logic in child features
 
 There is another common scenario for sharing logic in features where the parent feature wants to
-invoke logic in a child feature. One can technically do this by sending actions from the parent 
-to the child, but we do not recommend it (see above in <doc:Performance#Sharing-logic-with-actions>
-to learn why):
+invoke logic in a child feature. You can accomplish this by sending actions from the parent to the
+child:
 
 ```swift
 // Handling action from parent feature:
@@ -195,13 +194,9 @@ case .buttonTapped:
   return .send(.child(.refresh))
 ```
 
-Instead, we recommend invoking the child reducer directly:
-
-```swift
-case .buttonTapped:
-  return Child().reduce(into: &state.child, action: .refresh)
-    .map(Action.child)
-```
+With the same caveat that this is not the most efficient way to communicate to a child. If
+performance is a concern, consider extracting the shared logic to helpers that can be invoked from
+either domain.
 
 ### CPU intensive calculations
 
@@ -274,7 +269,7 @@ case .startButtonTapped:
 
     for await event in self.eventsClient.events() {
       defer { count += 1 }
-      send(.progress(Double(count) / Double(max)))
+      await send(.progress(Double(count) / Double(max)))
     }
   }
 }
@@ -297,7 +292,7 @@ case .startButtonTapped:
     for await event in self.eventsClient.events() {
       defer { count += 1 }
       if count.isMultiple(of: interval) {
-        send(.progress(Double(count) / Double(max)))
+        await send(.progress(Double(count) / Double(max)))
       }
     }
   }
@@ -308,10 +303,10 @@ This greatly reduces the bandwidth of actions being sent into the system so that
 incurring unnecessary costs for sending actions.
 
 Another example that comes up often is sliders. If done in the most direct way, by deriving a 
-binding from the view store to hand to a `Slider`:
+binding from the store to hand to a `Slider`:
 
 ```swift
-Slider(value: viewStore.$opacity, in: 0...1)
+Slider(value: store.$opacity, in: 0...1)
 ```
 
 This will send an action into the system for every little change to the slider, which can be dozens
@@ -347,18 +342,9 @@ ChildView(
 )
 ```
 
-Another example is scoping to some collection of a child domain in order to use with 
-``ForEachStore``:
-
-```swift
-ForEachStore(store.scope(state: \.rows, action: \.rows)) { store in
-  RowView(store: store)
-}
-```
-
-And similarly for ``IfLetStore`` and ``SwitchStore``. And finally, scoping to a child domain to be
-used with one of the libraries navigation view modifiers, such as 
-``SwiftUI/View/sheet(store:onDismiss:content:)``, also falls under the intended use of scope:
+Furthermore, scoping to a child domain to be used with one of the libraries navigation view modifiers,
+such as ``SwiftUI/View/sheet(store:onDismiss:content:)``, also falls under the intended 
+use of scope:
 
 ```swift
 .sheet(store: store.scope(state: \.child, action: \.child)) { store in

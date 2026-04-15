@@ -6,6 +6,7 @@ final class MemoryManagementTests: BaseTCATestCase {
   var cancellables: Set<AnyCancellable> = []
 
   @available(*, deprecated)
+  @MainActor
   func testOwnership_ScopeHoldsOntoParent() {
     let counterReducer = Reduce<Int, Void> { state, _ in
       state += 1
@@ -24,6 +25,8 @@ final class MemoryManagementTests: BaseTCATestCase {
     XCTAssertEqual(count, 1)
   }
 
+  @available(*, deprecated)
+  @MainActor
   func testOwnership_ViewStoreHoldsOntoStore() {
     let counterReducer = Reduce<Int, Void> { state, _ in
       state += 1
@@ -40,6 +43,7 @@ final class MemoryManagementTests: BaseTCATestCase {
   }
 
   @available(*, deprecated)
+  @MainActor
   func testEffectWithMultipleScopes() {
     let expectation = self.expectation(description: "")
 

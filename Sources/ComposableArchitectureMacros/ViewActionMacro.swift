@@ -1,7 +1,10 @@
 import SwiftDiagnostics
 import SwiftSyntax
-import SwiftSyntaxMacroExpansion
 import SwiftSyntaxMacros
+
+#if !canImport(SwiftSyntax600)
+  import SwiftSyntaxMacroExpansion
+#endif
 
 public struct ViewActionMacro: ExtensionMacro {
   public static func expansion<D: DeclGroupSyntax, T: TypeSyntaxProtocol, C: MacroExpansionContext>(
@@ -12,7 +15,7 @@ public struct ViewActionMacro: ExtensionMacro {
     in context: C
   ) throws -> [ExtensionDeclSyntax] {
     guard
-      case let .argumentList(arguments) = node.arguments,
+      case .argumentList(let arguments) = node.arguments,
       arguments.count == 1,
       let memberAccessExpr = arguments.first?.expression.as(MemberAccessExprSyntax.self)
     else { return [] }

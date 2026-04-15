@@ -20,7 +20,7 @@ struct SpeechRecognition {
   enum Action {
     case alert(PresentationAction<Alert>)
     case recordButtonTapped
-    case speech(Result<String, Error>)
+    case speech(Result<String, any Error>)
     case speechRecognizerAuthorizationStatusResponse(SFSpeechRecognizerAuthorizationStatus)
 
     enum Alert: Equatable {}
@@ -71,11 +71,11 @@ struct SpeechRecognition {
         }
         return .none
 
-      case let .speech(.success(transcribedText)):
+      case .speech(.success(let transcribedText)):
         state.transcribedText = transcribedText
         return .none
 
-      case let .speechRecognizerAuthorizationStatusResponse(status):
+      case .speechRecognizerAuthorizationStatusResponse(let status):
         state.isRecording = status == .authorized
 
         switch status {

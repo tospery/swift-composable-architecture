@@ -2,8 +2,10 @@
 import Combine
 import ConcurrencyExtras
 import CustomDump
+@_spi(Beta) import Dependencies
 import Foundation
-import XCTestDynamicOverlay
+import IssueReporting
+@_spi(SharedChangeTracking) import Sharing
 
 /// A testable runtime for a reducer.
 ///
@@ -12,7 +14,7 @@ import XCTestDynamicOverlay
 /// of the way you must assert exactly how state changed, and how effect emissions were fed back
 /// into the system.
 ///
-/// See the dedicated <doc:Testing> article for detailed information on testing.
+/// See the dedicated <doc:TestingTCA> article for detailed information on testing.
 ///
 /// ## Exhaustive testing
 ///
@@ -76,8 +78,9 @@ import XCTestDynamicOverlay
 ///
 /// ```swift
 /// @MainActor
-/// class CounterTests: XCTestCase {
-///   func testCounter() async {
+/// struct CounterTests {
+///   @Test
+///   func basics() async {
 ///     let store = TestStore(
 ///       // Given: a counter state of 0
 ///       initialState: Counter.State(count: 0),
@@ -131,7 +134,7 @@ import XCTestDynamicOverlay
 ///
 ///   enum Action {
 ///     case queryChanged(String)
-///     case searchResponse(Result<[String], Error>)
+///     case searchResponse(Result<[String], any Error>)
 ///   }
 ///
 ///   @Dependency(\.apiClient) var apiClient
@@ -261,13 +264,14 @@ import XCTestDynamicOverlay
 /// complete before the test is finished. To turn off exhaustivity you can set ``exhaustivity``
 /// to ``Exhaustivity/off``. When that is done the ``TestStore``'s behavior changes:
 ///
-///   * The trailing closures of ``send(_:assert:file:line:)-2co21`` and
-///     ``receive(_:timeout:assert:file:line:)-6325h`` no longer need to assert on all state
-///     changes. They can assert on any subset of changes, and only if they make an incorrect
+///   * The trailing closures of ``send(_:assert:fileID:file:line:column:)-8f2pl`` and
+///     ``receive(_:timeout:assert:fileID:file:line:column:)-8zqxk`` no longer need to assert on all
+///     state changes. They can assert on any subset of changes, and only if they make an incorrect
 ///     mutation will a test failure be reported.
-///   * The ``send(_:assert:file:line:)-2co21`` and ``receive(_:timeout:assert:file:line:)-6325h``
-///     methods are allowed to be called even when actions have been received from effects that have
-///     not been asserted on yet. Any pending actions will be cleared.
+///   * The ``send(_:assert:fileID:file:line:column:)-8f2pl`` and
+///     ``receive(_:timeout:assert:fileID:file:line:column:)-8zqxk`` methods are allowed to be
+///     called even when actions have been received from effects that have not been asserted on yet.
+///     Any pending actions will be cleared.
 ///   * Tests are allowed to finish with unasserted, received actions and in-flight effects. No test
 ///     failures will be reported.
 ///
@@ -422,8 +426,8 @@ import XCTestDynamicOverlay
 /// [merowing.info]: https://www.merowing.info
 /// [exhaustive-testing-in-tca]: https://www.merowing.info/exhaustive-testing-in-tca/
 /// [Composable-Architecture-at-Scale]: https://vimeo.com/751173570
-public final class TestStore<State, Action> {
-
+@preconcurrency @MainActor
+public final class TestStore<State: Equatable, Action> {
   /// The current dependencies of the test store.
   ///
   /// The dependencies define the execution context that your feature runs in. They can be modified
@@ -474,8 +478,10 @@ public final class TestStore<State, Action> {
 
   /// The current state of the test store.
   ///
-  /// When read from a trailing closure assertion in ``send(_:assert:file:line:)-2co21`` or
-  /// ``receive(_:timeout:assert:file:line:)-6325h``, it will equal the `inout` state passed to the
+  /// When read from a trailing closure assertion in
+  /// ``send(_:assert:fileID:file:line:column:)-8f2pl`` or
+  /// ``receive(_:timeout:assert:fileID:file:line:column:)-8zqxk``, it will equal the `inout` state
+  /// passed to the
   /// closure.
   public var state: State {
     self.reducer.state
@@ -484,11 +490,14 @@ public final class TestStore<State, Action> {
   /// The default timeout used in all methods that take an optional timeout.
   ///
   /// This is the default timeout used in all methods that take an optional timeout, such as
-  /// ``receive(_:timeout:assert:file:line:)-6325h`` and ``finish(timeout:file:line:)-53gi5``.
-  public var timeout: UInt64
+  /// ``receive(_:timeout:assert:fileID:file:line:column:)-8zqxk`` and
+  /// ``finish(timeout:fileID:file:line:column:)-klnc``.
+  public var timeout: Duration
 
-  private let file: StaticString
+  private let fileID: StaticString
+  private let filePath: StaticString
   private let line: UInt
+  private let column: UInt
   let reducer: TestReducer<State, Action>
   private let sharedChangeTracker: SharedChangeTracker
   private let store: Store<State, TestReducer<State, Action>.TestAction>
@@ -498,7 +507,7 @@ public final class TestStore<State, Action> {
 
   /// Creates a test store with an initial state and a reducer powering its runtime.
   ///
-  /// See <doc:Testing> and the documentation of ``TestStore`` for more information on how to best
+  /// See <doc:TestingTCA> and the documentation of ``TestStore`` for more information on how to best
   /// use a test store.
   ///
   /// - Parameters:
@@ -511,78 +520,67 @@ public final class TestStore<State, Action> {
   ///   - prepareDependencies: A closure that can be used to override dependencies that will be
   ///     accessed during the test. These dependencies will be used when producing the initial
   ///     state.
-  public init<R: Reducer>(
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
+  public init(
     initialState: @autoclosure () -> State,
-    reducer: () -> R,
-    withDependencies prepareDependencies: (inout DependencyValues) -> Void = { _ in
-    },
-    file: StaticString = #file,
-    line: UInt = #line
-  )
-  where State: Equatable, R.State == State, R.Action == Action {
+    reducer: () -> some Reducer<State, Action>,
+    withDependencies prepareDependencies: (inout DependencyValues) -> Void = { _ in },
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) {
     let sharedChangeTracker = SharedChangeTracker()
-    let reducer = XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
-      Dependencies.withDependencies {
-        prepareDependencies(&$0)
-        $0.sharedChangeTrackers.insert(sharedChangeTracker)
-      } operation: {
-        TestReducer(Reduce(reducer()), initialState: initialState())
-      }
+    let reducer = Dependencies.withDependencies {
+      prepareDependencies(&$0)
+      sharedChangeTracker.track(&$0)
+      $0.navigationIDPath.append(NavigationID())
+    } operation: {
+      TestReducer(Reduce(reducer()), initialState: initialState())
     }
-    self.file = file
+    self.fileID = fileID
+    self.filePath = filePath
     self.line = line
+    self.column = column
     self.reducer = reducer
     self.store = Store(initialState: reducer.state) { reducer }
-    self.timeout = 1 * NSEC_PER_SEC
+    self.timeout = .seconds(1)
     self.sharedChangeTracker = sharedChangeTracker
     self.useMainSerialExecutor = true
     self.reducer.store = self
   }
 
-  // NB: Only needed until Xcode ships a macOS SDK that uses the 5.7 standard library.
-  // See: https://forums.swift.org/t/xcode-14-rc-cannot-specialize-protocol-type/60171/15
-  #if (canImport(RegexBuilder) || !os(macOS) && !targetEnvironment(macCatalyst))
-    /// Suspends until all in-flight effects have finished, or until it times out.
-    ///
-    /// Can be used to assert that all effects have finished.
-    ///
-    /// - Parameter duration: The amount of time to wait before asserting.
-    @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-    @MainActor
-    public func finish(
-      timeout duration: Duration,
-      file: StaticString = #file,
-      line: UInt = #line
-    ) async {
-      await self.finish(timeout: duration.nanoseconds, file: file, line: line)
-    }
-  #endif
-
   /// Suspends until all in-flight effects have finished, or until it times out.
   ///
   /// Can be used to assert that all effects have finished.
   ///
-  /// > Important: `TestStore.finish()` should only be called once per test store, at the end of the
-  /// > test. Interacting with a finished test store is undefined.
-  ///
-  /// - Parameter nanoseconds: The amount of time to wait before asserting.
-  @_disfavoredOverload
-  @MainActor
+  /// - Parameters:
+  ///   - duration: The amount of time to wait before asserting.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   public func finish(
-    timeout nanoseconds: UInt64? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    timeout duration: Duration? = nil,
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
-    self.assertNoReceivedActions(file: file, line: line)
+    self.assertNoReceivedActions(fileID: fileID, filePath: filePath, line: line, column: column)
     Task.cancel(id: OnFirstAppearID())
-    let nanoseconds = nanoseconds ?? self.timeout
-    let start = DispatchTime.now().uptimeNanoseconds
+    let duration = duration ?? self.timeout
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: duration)
     await Task.megaYield()
     while !self.reducer.inFlightEffects.isEmpty {
-      guard start.distance(to: DispatchTime.now().uptimeNanoseconds) < nanoseconds
+      guard clock.now < deadline
       else {
         let timeoutMessage =
-          nanoseconds != self.timeout
+          duration != self.timeout
           ? #"try increasing the duration of this assertion's "timeout""#
           : #"configure this assertion with an explicit "timeout""#
         let suggestion = """
@@ -595,75 +593,94 @@ public final class TestStore<State, Action> {
           If you are not yet using a clock/scheduler, or can not use a clock/scheduler, \
           \(timeoutMessage).
           """
-        XCTFailHelper(
+        reportIssueHelper(
           """
           Expected effects to finish, but there are still effects in-flight\
-          \(nanoseconds > 0 ? " after \(Double(nanoseconds)/Double(NSEC_PER_SEC)) seconds" : "").
+          \(duration > .zero ? " after \(duration)" : "").
 
           \(suggestion)
           """,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
         return
       }
       await Task.yield()
     }
-    self.assertNoSharedChanges(file: file, line: line)
+    self.assertNoSharedChanges(fileID: fileID, filePath: filePath, line: line, column: column)
   }
 
   deinit {
-    self.completed()
     uncheckedUseMainSerialExecutor = self.originalUseMainSerialExecutor
+    mainActorNow { self.completed() }
   }
 
   func completed() {
-    self.assertNoReceivedActions(file: self.file, line: self.line)
+    self.assertNoReceivedActions(
+      fileID: self.fileID,
+      filePath: self.filePath,
+      line: self.line,
+      column: self.column
+    )
     Task.cancel(id: OnFirstAppearID())
     for effect in self.reducer.inFlightEffects {
-      XCTFailHelper(
+      reportIssueHelper(
         """
         An effect returned for this action is still running. It must complete before the end of \
-        the test. …
+        the test.
 
         To fix, inspect any effects the reducer returns for this action and ensure that all of \
         them complete by the end of the test. There are a few reasons why an effect may not have \
         completed:
 
-        • If using async/await in your effect, it may need a little bit of time to properly \
+        If using async/await in your effect, it may need a little bit of time to properly \
         finish. To fix you can simply perform "await store.finish()" at the end of your test.
 
-        • If an effect uses a clock (or scheduler, via "receive(on:)", "delay", "debounce", etc.), \
+        If an effect uses a clock (or scheduler, via "receive(on:)", "delay", "debounce", etc.), \
         make sure that you wait enough time for it to perform the effect. If you are using a test \
         clock/scheduler, advance it so that the effects may complete, or consider using an \
         immediate clock/scheduler to immediately perform the effect instead.
 
-        • If you are returning a long-living effect (timers, notifications, subjects, etc.), \
+        If you are returning a long-living effect (timers, notifications, subjects, etc.), \
         then make sure those effects are torn down by marking the effect ".cancellable" and \
         returning a corresponding cancellation effect ("Effect.cancel") from another action, or, \
         if your effect is driven by a Combine subject, send it a completion.
 
-        • If you do not wish to assert on these effects, perform "await \
+        If you do not wish to assert on these effects, perform "await \
         store.skipInFlightEffects()", or consider using a non-exhaustive test store: \
         "store.exhaustivity = .off".
         """,
-        file: effect.action.file,
-        line: effect.action.line
+        fileID: effect.action.fileID,
+        filePath: effect.action.filePath,
+        line: effect.action.line,
+        column: effect.action.column
       )
     }
-    self.assertNoSharedChanges(file: self.file, line: self.line)
+    self.assertNoSharedChanges(
+      fileID: self.fileID,
+      filePath: self.filePath,
+      line: self.line,
+      column: self.column
+    )
   }
 
-  private func assertNoReceivedActions(file: StaticString, line: UInt) {
+  private func assertNoReceivedActions(
+    fileID: StaticString,
+    filePath: StaticString,
+    line: UInt,
+    column: UInt
+  ) {
     if !self.reducer.receivedActions.isEmpty {
       let actions = self.reducer.receivedActions
         .map(\.action)
-        .map { "    • " + debugCaseOutput($0, abbreviated: true) }
+        .map { "    " + debugCaseOutput($0, abbreviated: true) }
         .joined(separator: "\n")
-      XCTFailHelper(
+      reportIssueHelper(
         """
         The store received \(self.reducer.receivedActions.count) unexpected \
-        action\(self.reducer.receivedActions.count == 1 ? "" : "s"): …
+        action\(self.reducer.receivedActions.count == 1 ? "" : "s").
 
           Unhandled actions:
         \(actions)
@@ -672,35 +689,38 @@ public final class TestStore<State, Action> {
         by performing "await store.skipReceivedActions()", or consider using a non-exhaustive test \
         store: "store.exhaustivity = .off".
         """,
-        file: file,
-        line: line
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
       )
     }
   }
 
-  private func assertNoSharedChanges(file: StaticString, line: UInt) {
-    // NB: This existential opening can go away if we can constrain 'State: Equatable' at the
-    //     'TestStore' level, but for some reason this breaks DocC.
-    if self.sharedChangeTracker.hasChanges, let stateType = State.self as? any Equatable.Type {
-      func open<EquatableState: Equatable>(_: EquatableState.Type) {
-        let store = self as! TestStore<EquatableState, Action>
-        try? store.expectedStateShouldMatch(
-          preamble: "Test store finished before asserting against changes to shared state",
-          postamble: """
-            Invoke "TestStore.assert" at the end of this test to assert against changes to shared \
-            state.
-            """,
-          expected: store.state,
-          actual: store.state,
-          updateStateToExpectedResult: nil,
-          skipUnnecessaryModifyFailure: true,
-          file: file,
-          line: line
-        )
-      }
-      open(stateType)
-      self.sharedChangeTracker.resetChanges()
+  private func assertNoSharedChanges(
+    fileID: StaticString,
+    filePath: StaticString,
+    line: UInt,
+    column: UInt
+  ) {
+    if sharedChangeTracker.hasChanges {
+      try? expectedStateShouldMatch(
+        preamble: "Test store finished before asserting against changes to shared state",
+        postamble: """
+          Invoke "TestStore.assert" at the end of this test to assert against changes to shared \
+          state.
+          """,
+        expected: state,
+        actual: state,
+        updateStateToExpectedResult: nil,
+        skipUnnecessaryModifyFailure: true,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
     }
+    sharedChangeTracker.reset()
   }
 
   /// Overrides the store's dependencies for a given operation.
@@ -725,14 +745,13 @@ public final class TestStore<State, Action> {
   ///   - updateValuesForOperation: A closure for updating the store's dependency values for the
   ///     duration of the operation.
   ///   - operation: The operation.
-  @MainActor
   public func withDependencies<R>(
-    _ updateValuesForOperation: (_ dependencies: inout DependencyValues) async throws -> Void,
-    operation: @MainActor () async throws -> R
+    _ updateValuesForOperation: (_ dependencies: inout DependencyValues) throws -> Void,
+    operation: () async throws -> sending R
   ) async rethrows -> R {
     let previous = self.dependencies
     defer { self.dependencies = previous }
-    try await updateValuesForOperation(&self.dependencies)
+    try updateValuesForOperation(&self.dependencies)
     return try await operation()
   }
 
@@ -756,10 +775,9 @@ public final class TestStore<State, Action> {
   /// - Parameters:
   ///   - exhaustivity: The exhaustivity.
   ///   - operation: The operation.
-  @MainActor
   public func withExhaustivity<R>(
     _ exhaustivity: Exhaustivity,
-    operation: @MainActor () async throws -> R
+    operation: () async throws -> sending R
   ) async rethrows -> R {
     let previous = self.exhaustivity
     defer { self.exhaustivity = previous }
@@ -781,9 +799,9 @@ public final class TestStore<State, Action> {
 /// ```swift
 /// let testStore: TestStoreOf<Feature>
 /// ```
-public typealias TestStoreOf<R: Reducer> = TestStore<R.State, R.Action>
+public typealias TestStoreOf<R: Reducer> = TestStore<R.State, R.Action> where R.State: Equatable
 
-extension TestStore where State: Equatable {
+extension TestStore {
   /// Sends an action to the store and asserts when state changes.
   ///
   /// To assert on how state changes you can provide a trailing closure, and that closure is handed
@@ -804,12 +822,12 @@ extension TestStore where State: Equatable {
   /// immediately after awaiting `store.send`:
   ///
   /// ```swift
-  /// @MainActor
-  /// func testAnalytics() async {
-  ///   let events = ActorIsolated<[String]>([])
+  /// @Test
+  /// func analytics() async {
+  ///   let events = LockIsolated<[String]>([])
   ///   let analytics = AnalyticsClient(
   ///     track: { event in
-  ///       await events.withValue { $0.append(event) }
+  ///       events.withValue { $0.append(event) }
   ///     }
   ///   )
   ///
@@ -821,7 +839,7 @@ extension TestStore where State: Equatable {
   ///
   ///   await store.send(.buttonTapped)
   ///
-  ///   await events.withValue { XCTAssertEqual($0, ["Button Tapped"]) }
+  ///   events.withValue { XCTAssertEqual($0, ["Button Tapped"]) }
   /// }
   /// ```
   ///
@@ -857,33 +875,46 @@ extension TestStore where State: Equatable {
   ///     the store. The mutable state sent to this closure must be modified to match the state of
   ///     the store after processing the given action. Do not provide a closure if no change is
   ///     expected.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   /// - Returns: A ``TestStoreTask`` that represents the lifecycle of the effect executed when
   ///   sending the action.
-  @MainActor
   @discardableResult
   public func send(
     _ action: Action,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async -> TestStoreTask {
-    await XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
+    await _withIssueContext(fileID: fileID, filePath: filePath, line: line, column: column) {
       guard !self.isDismissed else {
-        XCTFail("Can't send action to dismissed test store.", file: file, line: line)
+        reportIssue(
+          "Can't send action to dismissed test store.",
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
+        )
         return TestStoreTask(rawValue: nil, timeout: self.timeout)
       }
       if !self.reducer.receivedActions.isEmpty {
         var actions = ""
         customDump(self.reducer.receivedActions.map(\.action), to: &actions)
-        XCTFailHelper(
+        reportIssueHelper(
           """
           Must handle \(self.reducer.receivedActions.count) received \
-          action\(self.reducer.receivedActions.count == 1 ? "" : "s") before sending an action: …
+          action\(self.reducer.receivedActions.count == 1 ? "" : "s") before sending an action.
 
           Unhandled actions: \(actions)
           """,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
       }
 
@@ -899,12 +930,15 @@ extension TestStore where State: Equatable {
       let expectedState = self.state
       let previousState = self.reducer.state
       let previousStackElementID = self.reducer.dependencies.stackElementID.incrementingCopy()
-      let task = self.sharedChangeTracker.track {
-        self.store.send(
-          .init(origin: .send(action), file: file, line: line),
-          originatingFrom: nil
+      let task = self.store.send(
+        .init(
+          origin: .send(action),
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
-      }
+      )
       if uncheckedUseMainSerialExecutor {
         await Task.yield()
       } else {
@@ -926,16 +960,24 @@ extension TestStore where State: Equatable {
           expected: expectedState,
           actual: currentState,
           updateStateToExpectedResult: updateStateToExpectedResult,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
       } catch {
-        XCTFail("Threw error: \(error)", file: file, line: line)
+        reportIssue(
+          "Threw error: \(error)",
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
+        )
       }
       // NB: Give concurrency runtime more time to kick off effects so users don't need to manually
       //     instrument their effects.
       await Task.megaYield(count: 20)
-      return .init(rawValue: task, timeout: self.timeout)
+      return .init(rawValue: task.rawValue, timeout: self.timeout)
     }
   }
 
@@ -946,12 +988,12 @@ extension TestStore where State: Equatable {
   /// to differ from the current state of the test store, a test failure will be triggered.
   ///
   /// This tool is most useful in non-exhaustive test stores (see
-  /// <doc:Testing#Non-exhaustive-testing>), which allow you to assert on a subset of the things
+  /// <doc:TestingTCA#Non-exhaustive-testing>), which allow you to assert on a subset of the things
   /// happening inside your features. For example, you can send an action in a child feature
   /// without asserting on how many changes in the system, and then tell the test store to
-  /// ``finish(timeout:file:line:)-53gi5`` by executing all of its effects, and finally to
-  /// ``skipReceivedActions(strict:file:line:)-a4ri`` to receive all actions. After that is done you
-  /// can assert on the final state of the store:
+  /// ``finish(timeout:fileID:file:line:column:)-klnc`` by executing all of its effects, and finally
+  /// to ``skipReceivedActions(strict:fileID:file:line:column:)`` to receive all actions. After that
+  /// is done you can assert on the final state of the store:
   ///
   /// ```swift
   /// store.exhaustivity = .off
@@ -970,27 +1012,38 @@ extension TestStore where State: Equatable {
   /// - Parameters:
   ///   - updateStateToExpectedResult: A closure that asserts against the current state of the test
   ///   store.
-  @MainActor
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   public func assert(
     _ updateStateToExpectedResult: @escaping (_ state: inout State) throws -> Void,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) {
-    XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
-      let expectedState = self.state
-      let currentState = self.reducer.state
-      do {
-        try self.expectedStateShouldMatch(
-          expected: expectedState,
-          actual: currentState,
-          updateStateToExpectedResult: updateStateToExpectedResult,
-          skipUnnecessaryModifyFailure: true,
-          file: file,
-          line: line
-        )
-      } catch {
-        XCTFail("Threw error: \(error)", file: file, line: line)
-      }
+    let expectedState = self.state
+    let currentState = self.reducer.state
+    do {
+      try self.expectedStateShouldMatch(
+        expected: expectedState,
+        actual: currentState,
+        updateStateToExpectedResult: updateStateToExpectedResult,
+        skipUnnecessaryModifyFailure: true,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
+    } catch {
+      reportIssue(
+        "Threw error: \(error)",
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
     }
   }
 
@@ -1001,15 +1054,17 @@ extension TestStore where State: Equatable {
     actual: State,
     updateStateToExpectedResult: ((inout State) throws -> Void)? = nil,
     skipUnnecessaryModifyFailure: Bool = false,
-    file: StaticString,
-    line: UInt
+    fileID: StaticString,
+    filePath: StaticString,
+    line: UInt,
+    column: UInt
   ) throws {
     try self.sharedChangeTracker.assert {
       let skipUnnecessaryModifyFailure =
         skipUnnecessaryModifyFailure
         || self.sharedChangeTracker.hasChanges == true
       if self.exhaustivity != .on {
-        self.sharedChangeTracker.resetChanges()
+        self.sharedChangeTracker.reset()
       }
 
       let current = expected
@@ -1036,9 +1091,10 @@ extension TestStore where State: Equatable {
         if let updateStateToExpectedResult {
           try Dependencies.withDependencies {
             $0 = self.reducer.dependencies
-            $0.sharedChangeTracker = self.sharedChangeTracker
           } operation: {
-            try updateStateToExpectedResult(&expectedWhenGivenPreviousState)
+            try self.sharedChangeTracker.assert {
+              try updateStateToExpectedResult(&expectedWhenGivenPreviousState)
+            }
           }
         }
         expected = expectedWhenGivenPreviousState
@@ -1054,9 +1110,10 @@ extension TestStore where State: Equatable {
         if let updateStateToExpectedResult {
           try Dependencies.withDependencies {
             $0 = self.reducer.dependencies
-            $0.sharedChangeTracker = self.sharedChangeTracker
           } operation: {
-            try updateStateToExpectedResult(&expectedWhenGivenActualState)
+            try self.sharedChangeTracker.assert {
+              try updateStateToExpectedResult(&expectedWhenGivenActualState)
+            }
           }
         }
         expected = expectedWhenGivenActualState
@@ -1070,23 +1127,26 @@ extension TestStore where State: Equatable {
         {
           var expectedWhenGivenPreviousState = current
           if let updateStateToExpectedResult {
-            XCTExpectFailure(strict: false) {
+            withExpectedIssue(isIntermittent: true) {
               do {
                 try Dependencies.withDependencies {
                   $0 = self.reducer.dependencies
-                  $0.sharedChangeTracker = self.sharedChangeTracker
                 } operation: {
-                  try updateStateToExpectedResult(&expectedWhenGivenPreviousState)
+                  try self.sharedChangeTracker.assert {
+                    try updateStateToExpectedResult(&expectedWhenGivenPreviousState)
+                  }
                 }
               } catch {
-                XCTFail(
+                reportIssue(
                   """
-                  Skipped assertions: …
+                  Skipped assertions.
 
                   Threw error: \(error)
                   """,
-                  file: file,
-                  line: line
+                  fileID: fileID,
+                  filePath: filePath,
+                  line: line,
+                  column: column
                 )
               }
             }
@@ -1102,6 +1162,7 @@ extension TestStore where State: Equatable {
         }
       }
 
+      @MainActor
       func expectationFailure(expected: State) {
         let difference = self.withExhaustivity(.on) {
           diff(expected, actual, format: .proportional)
@@ -1120,17 +1181,20 @@ extension TestStore where State: Equatable {
           : updateStateToExpectedResult != nil
             ? "A state change does not match expectation"
             : "State was not expected to change, but a change occurred"
-        XCTFailHelper(
+        reportIssueHelper(
           """
-          \(messageHeading): …
+          \(messageHeading).
 
           \(difference)\(postamble.isEmpty ? "" : "\n\n\(postamble)")
           """,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
       }
 
+      @MainActor
       func tryUnnecessaryModifyFailure() {
         guard
           !skipUnnecessaryModifyFailure,
@@ -1138,35 +1202,39 @@ extension TestStore where State: Equatable {
           updateStateToExpectedResult != nil
         else { return }
 
-        XCTFailHelper(
+        reportIssueHelper(
           """
           Expected state to change, but no change occurred.
 
           The trailing closure made no observable modifications to state. If no change to state is \
           expected, omit the trailing closure.
           """,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
       }
-      self.sharedChangeTracker.resetChanges()
+      self.sharedChangeTracker.reset()
     }
   }
 }
 
-extension TestStore where State: Equatable, Action: Equatable {
+extension TestStore where Action: Equatable {
   private func _receive(
     _ expectedAction: Action,
     assert updateStateToExpectedResult: ((inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) {
     var expectedActionDump = ""
     customDump(expectedAction, to: &expectedActionDump, indent: 2)
     self.receiveAction(
       matching: { expectedAction == $0 },
       failureMessage: """
-        Expected to receive the following action, but didn't: …
+        Expected to receive the following action, but didn't:
 
         \(expectedActionDump)
         """,
@@ -1184,61 +1252,12 @@ extension TestStore where State: Equatable, Action: Equatable {
         }
       },
       updateStateToExpectedResult,
-      file: file,
-      line: line
+      fileID: fileID,
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
-
-  // NB: Only needed until Xcode ships a macOS SDK that uses the 5.7 standard library.
-  // See: https://forums.swift.org/t/xcode-14-rc-cannot-specialize-protocol-type/60171/15
-  #if (canImport(RegexBuilder) || !os(macOS) && !targetEnvironment(macCatalyst))
-    /// Asserts an action was received from an effect and asserts how the state changes.
-    ///
-    /// When an effect is executed in your feature and sends an action back into the system, you can
-    /// use this method to assert that fact, and further assert how state changes after the effect
-    /// action is received:
-    ///
-    /// ```swift
-    /// await store.send(.buttonTapped)
-    /// await store.receive(.response(.success(42)) {
-    ///   $0.count = 42
-    /// }
-    /// ```
-    ///
-    /// Due to the variability of concurrency in Swift, sometimes a small amount of time needs to
-    /// pass before effects execute and send actions, and that is why this method suspends. The
-    /// default time waited is very small, and typically it is enough so you should be controlling
-    /// your dependencies so that they do not wait for real world time to pass (see
-    /// <doc:DependencyManagement> for more information on how to do that).
-    ///
-    /// To change the amount of time this method waits for an action, pass an explicit `timeout`
-    /// argument, or set the ``timeout`` on the ``TestStore``.
-    ///
-    /// - Parameters:
-    ///   - expectedAction: An action expected from an effect.
-    ///   - duration: The amount of time to wait for the expected action.
-    ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action
-    ///     to the store. The mutable state sent to this closure must be modified to match the state
-    ///     of the store after processing the given action. Do not provide a closure if no change
-    ///     is expected.
-    @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-    @MainActor
-    public func receive(
-      _ expectedAction: Action,
-      timeout duration: Duration,
-      assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-      file: StaticString = #file,
-      line: UInt = #line
-    ) async {
-      await self.receive(
-        expectedAction,
-        timeout: duration.nanoseconds,
-        assert: updateStateToExpectedResult,
-        file: file,
-        line: line
-      )
-    }
-  #endif
 
   /// Asserts an action was received from an effect and asserts how the state changes.
   ///
@@ -1264,49 +1283,90 @@ extension TestStore where State: Equatable, Action: Equatable {
   ///
   /// - Parameters:
   ///   - expectedAction: An action expected from an effect.
-  ///   - nanoseconds: The amount of time to wait for the expected action.
-  ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action to
-  ///     the store. The mutable state sent to this closure must be modified to match the state of
-  ///     the store after processing the given action. Do not provide a closure if no change is
-  ///     expected.
-  @MainActor
-  @_disfavoredOverload
+  ///   - duration: The amount of time to wait for the expected action.
+  ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action
+  ///     to the store. The mutable state sent to this closure must be modified to match the state
+  ///     of the store after processing the given action. Do not provide a closure if no change
+  ///     is expected.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   public func receive(
     _ expectedAction: Action,
-    timeout nanoseconds: UInt64? = nil,
+    timeout duration: Duration? = nil,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
-    await XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
+    await self._receiveExpectedAction(
+      expectedAction,
+      timeout: duration,
+      assert: updateStateToExpectedResult,
+      fileID: fileID,
+      file: filePath,
+      line: line,
+      column: column
+    )
+  }
+
+  private func _receiveExpectedAction(
+    _ expectedAction: Action,
+    timeout duration: Duration? = nil,
+    assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) async {
+    await _withIssueContext(fileID: fileID, filePath: filePath, line: line, column: column) {
       guard !self.reducer.inFlightEffects.isEmpty
       else {
         _ = {
           self._receive(
-            expectedAction, assert: updateStateToExpectedResult, file: file, line: line)
+            expectedAction,
+            assert: updateStateToExpectedResult,
+            fileID: fileID,
+            filePath: filePath,
+            line: line,
+            column: column
+          )
         }()
         return
       }
       await self.receiveAction(
         matching: { expectedAction == $0 },
-        timeout: nanoseconds,
-        file: file,
-        line: line
+        timeout: duration,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
       )
       _ = {
-        self._receive(expectedAction, assert: updateStateToExpectedResult, file: file, line: line)
+        self._receive(
+          expectedAction,
+          assert: updateStateToExpectedResult,
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
+        )
       }()
       await Task.megaYield()
     }
   }
 }
 
-extension TestStore where State: Equatable {
+extension TestStore {
   private func _receive(
     _ isMatching: (Action) -> Bool,
     assert updateStateToExpectedResult: ((inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) {
     self.receiveAction(
       matching: isMatching,
@@ -1317,16 +1377,20 @@ extension TestStore where State: Equatable {
         return action
       },
       updateStateToExpectedResult,
-      file: file,
-      line: line
+      fileID: fileID,
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
 
   private func _receive<Value>(
     _ actionCase: AnyCasePath<Action, Value>,
     assert updateStateToExpectedResult: ((inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) {
     self.receiveAction(
       matching: { actionCase.extract(from: $0) != nil },
@@ -1337,8 +1401,10 @@ extension TestStore where State: Equatable {
         return action
       },
       updateStateToExpectedResult,
-      file: file,
-      line: line
+      fileID: fileID,
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
 
@@ -1346,8 +1412,10 @@ extension TestStore where State: Equatable {
     _ actionCase: AnyCasePath<Action, Value>,
     _ value: Value,
     assert updateStateToExpectedResult: ((inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) {
     self.receiveAction(
       matching: { actionCase.extract(from: $0) == value },
@@ -1370,72 +1438,19 @@ extension TestStore where State: Equatable {
         return action
       },
       updateStateToExpectedResult,
-      file: file,
-      line: line
+      fileID: fileID,
+      filePath: filePath,
+      line: line,
+      column: column
     )
   }
-
-  // NB: Only needed until Xcode ships a macOS SDK that uses the 5.7 standard library.
-  // See: https://forums.swift.org/t/xcode-14-rc-cannot-specialize-protocol-type/60171/15
-  #if (canImport(RegexBuilder) || !os(macOS) && !targetEnvironment(macCatalyst))
-    /// Asserts an action was received from an effect that matches a predicate, and asserts how the
-    /// state changes.
-    ///
-    /// This method is similar to ``receive(_:timeout:assert:file:line:)-6325h``, except it allows
-    /// you to assert that an action was received that matches a predicate instead of a case key
-    /// path:
-    ///
-    /// ```swift
-    /// await store.send(.buttonTapped)
-    /// await store.receive {
-    ///   guard case .response(.success) = $0 else { return false }
-    ///   return true
-    /// } assert: {
-    ///   store.count = 42
-    /// }
-    /// ```
-    ///
-    /// When the store's ``exhaustivity`` is set to anything other than ``Exhaustivity/off``, a grey
-    /// information box will show next to the `store.receive` line in Xcode letting you know what
-    /// data was in the effect that you chose not to assert on.
-    ///
-    /// If you only want to check that a particular action case was received, then you might find
-    /// the ``receive(_:timeout:assert:file:line:)-6325h`` overload of this method more useful.
-    ///
-    /// - Parameters:
-    ///   - isMatching: A closure that attempts to match an action. If it returns `false`, a test
-    ///     failure is reported.
-    ///   - duration: The amount of time to wait for the expected action.
-    ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action
-    ///     to the store. The mutable state sent to this closure must be modified to match the state
-    ///     of the store after processing the given action. Do not provide a closure if no change is
-    ///     expected.
-    @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-    @MainActor
-    @_disfavoredOverload
-    public func receive(
-      _ isMatching: (_ action: Action) -> Bool,
-      timeout duration: Duration,
-      assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-      file: StaticString = #file,
-      line: UInt = #line
-    ) async {
-      await self.receive(
-        isMatching,
-        timeout: duration.nanoseconds,
-        assert: updateStateToExpectedResult,
-        file: file,
-        line: line
-      )
-    }
-  #endif
 
   /// Asserts an action was received from an effect that matches a predicate, and asserts how the
   /// state changes.
   ///
-  /// This method is similar to ``receive(_:timeout:assert:file:line:)-6325h``, except it allows
-  /// you to assert that an action was received that matches a predicate instead of a case key
-  /// path:
+  /// This method is similar to ``receive(_:timeout:assert:fileID:file:line:column:)-8zqxk``, except
+  /// it allows you to assert that an action was received that matches a predicate instead of a case
+  /// key path:
   ///
   /// ```swift
   /// await store.send(.buttonTapped)
@@ -1452,36 +1467,83 @@ extension TestStore where State: Equatable {
   /// was in the effect that you chose not to assert on.
   ///
   /// If you only want to check that a particular action case was received, then you might find the
-  /// ``receive(_:timeout:assert:file:line:)-6325h`` overload of this method more useful.
+  /// ``receive(_:timeout:assert:fileID:file:line:column:)-53wic`` overload of this method more
+  /// useful.
   ///
   /// - Parameters:
   ///   - isMatching: A closure that attempts to match an action. If it returns `false`, a test
   ///     failure is reported.
-  ///   - nanoseconds: The amount of time to wait for the expected action.
-  ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action to
-  ///     the store. The mutable state sent to this closure must be modified to match the state of
-  ///     the store after processing the given action. Do not provide a closure if no change is
+  ///   - duration: The amount of time to wait for the expected action.
+  ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action
+  ///     to the store. The mutable state sent to this closure must be modified to match the state
+  ///     of the store after processing the given action. Do not provide a closure if no change is
   ///     expected.
-  @MainActor
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   @_disfavoredOverload
   public func receive(
     _ isMatching: (_ action: Action) -> Bool,
-    timeout nanoseconds: UInt64? = nil,
+    timeout duration: Duration? = nil,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
-    await XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
+    await self._receiveMatchingAction(
+      isMatching,
+      timeout: duration,
+      assert: updateStateToExpectedResult,
+      fileID: fileID,
+      file: filePath,
+      line: line,
+      column: column
+    )
+  }
+
+  private func _receiveMatchingAction(
+    _ isMatching: (_ action: Action) -> Bool,
+    timeout duration: Duration? = nil,
+    assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) async {
+    await _withIssueContext(fileID: fileID, filePath: filePath, line: line, column: column) {
       guard !self.reducer.inFlightEffects.isEmpty
       else {
         _ = {
-          self._receive(isMatching, assert: updateStateToExpectedResult, file: file, line: line)
+          self._receive(
+            isMatching,
+            assert: updateStateToExpectedResult,
+            fileID: fileID,
+            filePath: filePath,
+            line: line,
+            column: column
+          )
         }()
         return
       }
-      await self.receiveAction(matching: isMatching, timeout: nanoseconds, file: file, line: line)
+      await self.receiveAction(
+        matching: isMatching,
+        timeout: duration,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
       _ = {
-        self._receive(isMatching, assert: updateStateToExpectedResult, file: file, line: line)
+        self._receive(
+          isMatching,
+          assert: updateStateToExpectedResult,
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
+        )
       }()
       await Task.megaYield()
     }
@@ -1489,14 +1551,15 @@ extension TestStore where State: Equatable {
 
   /// Asserts an action was received matching a case path and asserts how the state changes.
   ///
-  /// This method is similar to ``receive(_:timeout:assert:file:line:)-7md3m``, except it allows
-  /// you to assert that an action was received that matches a case key path instead of a predicate.
+  /// This method is similar to ``receive(_:timeout:assert:fileID:file:line:column:)-8zqxk``, except
+  /// it allows you to assert that an action was received that matches a case key path instead of a
+  /// predicate.
   ///
   /// It can be useful to assert that a particular action was received without asserting on the data
   /// inside the action. For example:
   ///
   /// ```swift
-  /// await store.receive(/Search.Action.searchResponse) {
+  /// await store.receive(\.searchResponse) {
   ///   $0.results = [
   ///     "CasePaths",
   ///     "ComposableArchitecture",
@@ -1512,34 +1575,87 @@ extension TestStore where State: Equatable {
   ///
   /// - Parameters:
   ///   - actionCase: A case path identifying the case of an action to enum to receive
-  ///   - nanoseconds: The amount of time to wait for the expected action.
-  ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action to
-  ///     the store. The mutable state sent to this closure must be modified to match the state of
-  ///     the store after processing the given action. Do not provide a closure if no change is
+  ///   - duration: The amount of time to wait for the expected action.
+  ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action
+  ///     to the store. The mutable state sent to this closure must be modified to match the state
+  ///     of the store after processing the given action. Do not provide a closure if no change is
   ///     expected.
-  @MainActor
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   @_disfavoredOverload
   public func receive<Value>(
     _ actionCase: CaseKeyPath<Action, Value>,
-    timeout nanoseconds: UInt64? = nil,
+    timeout duration: Duration? = nil,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
-    await self.receive(
+    await self._receive(
       AnyCasePath(actionCase),
-      timeout: nanoseconds,
+      timeout: duration,
       assert: updateStateToExpectedResult,
-      file: file,
-      line: line
+      fileID: fileID,
+      file: filePath,
+      line: line,
+      column: column
     )
   }
 
-  /// Asserts an action was received matching a case path with a specific payload, and asserts
-  /// how the state changes.
+  func _receive<Value>(
+    _ actionCase: AnyCasePath<Action, Value>,
+    timeout duration: Duration? = nil,
+    assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
+  ) async {
+    await _withIssueContext(fileID: fileID, filePath: filePath, line: line, column: column) {
+      guard !self.reducer.inFlightEffects.isEmpty
+      else {
+        _ = {
+          self._receive(
+            actionCase,
+            assert: updateStateToExpectedResult,
+            fileID: fileID,
+            filePath: filePath,
+            line: line,
+            column: column
+          )
+        }()
+        return
+      }
+      await self.receiveAction(
+        matching: { actionCase.extract(from: $0) != nil },
+        timeout: duration,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
+      _ = {
+        self._receive(
+          actionCase,
+          assert: updateStateToExpectedResult,
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
+        )
+      }()
+      await Task.megaYield()
+    }
+  }
+
+  /// Asserts an action was received matching a case path with a specific payload, and asserts how
+  /// the state changes.
   ///
-  /// This method is similar to ``receive(_:timeout:assert:file:line:)-6325h``, except it allows
-  /// you to assert on the value inside the action too.
+  /// This method is similar to ``receive(_:timeout:assert:fileID:file:line:column:)-53wic``, except
+  /// it allows you to assert on the value inside the action too.
   ///
   /// It can be useful when asserting on delegate actions sent by a child feature:
   ///
@@ -1548,8 +1664,8 @@ extension TestStore where State: Equatable {
   /// ```
   ///
   /// When the store's ``exhaustivity`` is set to anything other than ``Exhaustivity/off``, a grey
-  /// information box will show next to the `store.receive` line in Xcode letting you know what
-  /// data was in the effect that you chose not to assert on.
+  /// information box will show next to the `store.receive` line in Xcode letting you know what data
+  /// was in the effect that you chose not to assert on.
   ///
   /// - Parameters:
   ///   - actionCase: A case path identifying the case of an action to enum to receive
@@ -1559,266 +1675,71 @@ extension TestStore where State: Equatable {
   ///     to the store. The mutable state sent to this closure must be modified to match the state
   ///     of the store after processing the given action. Do not provide a closure if no change is
   ///     expected.
-  @MainActor
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   @_disfavoredOverload
   public func receive<Value: Equatable>(
     _ actionCase: CaseKeyPath<Action, Value>,
     _ value: Value,
-    timeout nanoseconds: UInt64? = nil,
+    timeout duration: Duration? = nil,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async
   where Action: CasePathable {
     let actionCase = AnyCasePath(actionCase)
-    await XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
+    await _withIssueContext(fileID: fileID, filePath: filePath, line: line, column: column) {
       guard !self.reducer.inFlightEffects.isEmpty
       else {
         _ = {
           self._receive(
-            actionCase, value, assert: updateStateToExpectedResult, file: file, line: line
+            actionCase,
+            value,
+            assert: updateStateToExpectedResult,
+            fileID: fileID,
+            filePath: filePath,
+            line: line,
+            column: column
           )
         }()
         return
       }
       await self.receiveAction(
         matching: { actionCase.extract(from: $0) != nil },
-        timeout: nanoseconds,
-        file: file,
-        line: line
+        timeout: duration,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
       )
       _ = {
         self._receive(
-          actionCase, value, assert: updateStateToExpectedResult, file: file, line: line
+          actionCase,
+          value,
+          assert: updateStateToExpectedResult,
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
       }()
       await Task.megaYield()
     }
   }
-
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @MainActor
-  @_disfavoredOverload
-  public func receive<Value>(
-    _ actionCase: AnyCasePath<Action, Value>,
-    timeout nanoseconds: UInt64? = nil,
-    assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
-  ) async {
-    await XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
-      guard !self.reducer.inFlightEffects.isEmpty
-      else {
-        _ = {
-          self._receive(actionCase, assert: updateStateToExpectedResult, file: file, line: line)
-        }()
-        return
-      }
-      await self.receiveAction(
-        matching: { actionCase.extract(from: $0) != nil },
-        timeout: nanoseconds,
-        file: file,
-        line: line
-      )
-      _ = {
-        self._receive(actionCase, assert: updateStateToExpectedResult, file: file, line: line)
-      }()
-      await Task.megaYield()
-    }
-  }
-
-  #if (canImport(RegexBuilder) || !os(macOS) && !targetEnvironment(macCatalyst))
-    /// Asserts an action was received matching a case path and asserts how the state changes.
-    ///
-    /// This method is similar to ``receive(_:timeout:assert:file:line:)-7md3m``, except it allows
-    /// you to assert that an action was received that matches a case key path instead of a
-    /// predicate.
-    ///
-    /// It can be useful to assert that a particular action was received without asserting
-    /// on the data inside the action. For example:
-    ///
-    /// ```swift
-    /// await store.receive(\.searchResponse) {
-    ///   $0.results = [
-    ///     "CasePaths",
-    ///     "ComposableArchitecture",
-    ///     "IdentifiedCollections",
-    ///     "XCTestDynamicOverlay",
-    ///   ]
-    /// }
-    /// ```
-    ///
-    /// When the store's ``exhaustivity`` is set to anything other than ``Exhaustivity/off``, a grey
-    /// information box will show next to the `store.receive` line in Xcode letting you know what
-    /// data was in the effect that you chose not to assert on.
-    ///
-    /// - Parameters:
-    ///   - actionCase: A case path identifying the case of an action to enum to receive
-    ///   - duration: The amount of time to wait for the expected action.
-    ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action
-    ///     to the store. The mutable state sent to this closure must be modified to match the state
-    ///     of the store after processing the given action. Do not provide a closure if no change is
-    ///     expected.
-    @MainActor
-    @_disfavoredOverload
-    @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-    public func receive<Value>(
-      _ actionCase: CaseKeyPath<Action, Value>,
-      timeout duration: Duration,
-      assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-      file: StaticString = #file,
-      line: UInt = #line
-    ) async {
-      await self.receive(
-        AnyCasePath(actionCase),
-        timeout: duration,
-        assert: updateStateToExpectedResult,
-        file: file,
-        line: line
-      )
-    }
-
-    /// Asserts an action was received matching a case path with a specific payload, and asserts
-    /// how the state changes.
-    ///
-    /// This method is similar to ``receive(_:timeout:assert:file:line:)-6325h``, except it allows
-    /// you to assert on the value inside the action too.
-    ///
-    /// It can be useful when asserting on delegate actions sent by a child feature:
-    ///
-    /// ```swift
-    /// await store.receive(\.delegate.success, "Hello!")
-    /// ```
-    ///
-    /// When the store's ``exhaustivity`` is set to anything other than ``Exhaustivity/off``, a grey
-    /// information box will show next to the `store.receive` line in Xcode letting you know what
-    /// data was in the effect that you chose not to assert on.
-    ///
-    /// - Parameters:
-    ///   - actionCase: A case path identifying the case of an action to enum to receive
-    ///   - value: The value to match in the action.
-    ///   - duration: The amount of time to wait for the expected action.
-    ///   - updateStateToExpectedResult: A closure that asserts state changed by sending the action
-    ///     to the store. The mutable state sent to this closure must be modified to match the state
-    ///     of the store after processing the given action. Do not provide a closure if no change is
-    ///     expected.
-    @MainActor
-    @_disfavoredOverload
-    @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-    public func receive<Value: Equatable>(
-      _ actionCase: CaseKeyPath<Action, Value>,
-      _ value: Value,
-      timeout duration: Duration,
-      assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-      file: StaticString = #file,
-      line: UInt = #line
-    ) async
-    where Action: CasePathable {
-      await self.receive(
-        AnyCasePath(
-          embed: { actionCase($0) },
-          extract: { action in
-            action[case: actionCase].flatMap { $0 == value ? $0 : nil }
-          }
-        ),
-        timeout: duration,
-        assert: updateStateToExpectedResult,
-        file: file,
-        line: line
-      )
-    }
-
-    @MainActor
-    @_disfavoredOverload
-    @available(
-      iOS,
-      introduced: 16,
-      deprecated: 9999,
-      message:
-        "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-    )
-    @available(
-      macOS,
-      introduced: 13,
-      deprecated: 9999,
-      message:
-        "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-    )
-    @available(
-      tvOS,
-      introduced: 16,
-      deprecated: 9999,
-      message:
-        "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-    )
-    @available(
-      watchOS,
-      introduced: 9,
-      deprecated: 9999,
-      message:
-        "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-    )
-    public func receive<Value>(
-      _ actionCase: AnyCasePath<Action, Value>,
-      timeout duration: Duration,
-      assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-      file: StaticString = #file,
-      line: UInt = #line
-    ) async {
-      await XCTFailContext.$current.withValue(XCTFailContext(file: file, line: line)) {
-        guard !self.reducer.inFlightEffects.isEmpty
-        else {
-          _ = {
-            self._receive(
-              actionCase, assert: updateStateToExpectedResult, file: file, line: line
-            )
-          }()
-          return
-        }
-        await self.receiveAction(
-          matching: { actionCase.extract(from: $0) != nil },
-          timeout: duration.nanoseconds,
-          file: file,
-          line: line
-        )
-        _ = {
-          self._receive(actionCase, assert: updateStateToExpectedResult, file: file, line: line)
-        }()
-        await Task.megaYield()
-      }
-    }
-  #endif
 
   private func receiveAction(
     matching predicate: (Action) -> Bool,
     failureMessage: @autoclosure () -> String,
     unexpectedActionDescription: (Action) -> String,
     _ updateStateToExpectedResult: ((inout State) throws -> Void)?,
-    file: StaticString,
-    line: UInt
+    fileID: StaticString,
+    filePath: StaticString,
+    line: UInt,
+    column: UInt
   ) {
     let updateStateToExpectedResult = updateStateToExpectedResult.map { original in
       { (state: inout State) in
@@ -1829,20 +1750,24 @@ extension TestStore where State: Equatable {
     }
 
     guard !self.reducer.receivedActions.isEmpty else {
-      XCTFail(
+      reportIssue(
         failureMessage(),
-        file: file,
-        line: line
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
       )
       return
     }
 
     if self.exhaustivity != .on {
       guard self.reducer.receivedActions.contains(where: { predicate($0.action) }) else {
-        XCTFail(
+        reportIssue(
           failureMessage(),
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
         return
       }
@@ -1859,15 +1784,17 @@ extension TestStore where State: Equatable {
       if !actions.isEmpty {
         var actionsDump = ""
         customDump(actions, to: &actionsDump)
-        XCTFailHelper(
+        reportIssueHelper(
           """
           \(actions.count) received action\
-          \(actions.count == 1 ? " was" : "s were") skipped:
+          \(actions.count == 1 ? " was" : "s were") skipped.
 
           \(actionsDump)
           """,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
       }
     }
@@ -1876,14 +1803,16 @@ extension TestStore where State: Equatable {
     if !predicate(receivedAction) {
       let receivedActionLater = self.reducer.receivedActions
         .contains(where: { action, _ in predicate(receivedAction) })
-      XCTFailHelper(
+      reportIssueHelper(
         """
-        Received unexpected action\(receivedActionLater ? " before this one" : ""): …
+        Received unexpected action\(receivedActionLater ? " before this one" : ""):
 
         \(unexpectedActionDescription(receivedAction))
         """,
-        file: file,
-        line: line
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
       )
     } else {
       let expectedState = self.state
@@ -1892,27 +1821,37 @@ extension TestStore where State: Equatable {
           expected: expectedState,
           actual: state,
           updateStateToExpectedResult: updateStateToExpectedResult,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
       } catch {
-        XCTFail("Threw error: \(error)", file: file, line: line)
+        reportIssue(
+          "Threw error: \(error)",
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
+        )
       }
     }
     self.reducer.state = state
   }
 
-  @MainActor
   private func receiveAction(
     matching predicate: (Action) -> Bool,
-    timeout nanoseconds: UInt64?,
-    file: StaticString,
-    line: UInt
+    timeout duration: Duration?,
+    fileID: StaticString,
+    filePath: StaticString,
+    line: UInt,
+    column: UInt
   ) async {
-    let nanoseconds = nanoseconds ?? self.timeout
+    let duration = duration ?? self.timeout
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: duration)
 
     await Task.megaYield()
-    let start = DispatchTime.now().uptimeNanoseconds
     while !Task.isCancelled {
       await Task.detached(priority: .background) { await Task.yield() }.value
 
@@ -1925,7 +1864,7 @@ extension TestStore where State: Equatable {
         else { return }
       }
 
-      guard start.distance(to: DispatchTime.now().uptimeNanoseconds) < nanoseconds
+      guard clock.now < deadline
       else {
         let suggestion: String
         if self.reducer.inFlightEffects.isEmpty {
@@ -1935,7 +1874,7 @@ extension TestStore where State: Equatable {
             """
         } else {
           let timeoutMessage =
-            nanoseconds != self.timeout
+            duration != self.timeout
             ? #"try increasing the duration of this assertion's "timeout""#
             : #"configure this assertion with an explicit "timeout""#
           suggestion = """
@@ -1949,16 +1888,18 @@ extension TestStore where State: Equatable {
             \(timeoutMessage).
             """
         }
-        XCTFail(
+        reportIssue(
           """
           Expected to receive \(self.exhaustivity == .on ? "an action" : "a matching action"), but \
           received none\
-          \(nanoseconds > 0 ? " after \(Double(nanoseconds)/Double(NSEC_PER_SEC)) seconds" : "").
+          \(duration > .zero ? " after \(duration)" : "").
 
           \(suggestion)
           """,
-          file: file,
-          line: line
+          fileID: fileID,
+          filePath: filePath,
+          line: line,
+          column: column
         )
         return
       }
@@ -1966,18 +1907,18 @@ extension TestStore where State: Equatable {
   }
 }
 
-extension TestStore where State: Equatable {
+extension TestStore {
   /// Sends an action to the store and asserts when state changes.
   ///
-  /// This method is similar to ``send(_:assert:file:line:)-2co21``, except it allows you to specify
-  /// a case key path to an action, which can be useful when testing the integration of features and
-  /// sending deeply nested actions. For example:
+  /// This method is similar to ``send(_:assert:fileID:file:line:column:)-8f2pl``, except it allows
+  /// you to specify a case key path to an action, which can be useful when testing the integration
+  /// of features and sending deeply nested actions. For example:
   ///
   /// ```swift
   /// await store.send(.destination(.presented(.child(.tap))))
   /// ```
   ///
-  /// Can be simplified to:
+  /// …can be simplified to:
   ///
   /// ```swift
   /// await store.send(\.destination.child.tap)
@@ -1989,32 +1930,44 @@ extension TestStore where State: Equatable {
   ///     the store. The mutable state sent to this closure must be modified to match the state of
   ///     the store after processing the given action. Do not provide a closure if no change is
   ///     expected.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   /// - Returns: A ``TestStoreTask`` that represents the lifecycle of the effect executed when
   ///   sending the action.
-  @MainActor
-  @discardableResult
   @_disfavoredOverload
+  @discardableResult
   public func send(
     _ action: CaseKeyPath<Action, Void>,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async -> TestStoreTask {
-    await self.send(action(), assert: updateStateToExpectedResult, file: file, line: line)
+    await self.send(
+      action(),
+      assert: updateStateToExpectedResult,
+      fileID: fileID,
+      file: filePath,
+      line: line,
+      column: column
+    )
   }
 
   /// Sends an action to the store and asserts when state changes.
   ///
-  /// This method is similar to ``send(_:assert:file:line:)-1oopl``, except it allows
+  /// This method is similar to ``send(_:assert:fileID:file:line:column:)-8f2pl``, except it allows
   /// you to specify a value for the associated value of the action.
   ///
-  /// It can be useful when sending nested action.  For example::
+  /// It can be useful when sending nested action.  For example:
   ///
   /// ```swift
   /// await store.send(.destination(.presented(.child(.emailChanged("blob@pointfree.co")))))
   /// ```
   ///
-  /// Can be simplified to:
+  /// …can be simplified to:
   ///
   /// ```swift
   /// await store.send(\.destination.child.emailChanged, "blob@pointfree.co")
@@ -2027,19 +1980,31 @@ extension TestStore where State: Equatable {
   ///     the store. The mutable state sent to this closure must be modified to match the state of
   ///     the store after processing the given action. Do not provide a closure if no change is
   ///     expected.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   /// - Returns: A ``TestStoreTask`` that represents the lifecycle of the effect executed when
   ///   sending the action.
-  @MainActor
-  @discardableResult
   @_disfavoredOverload
+  @discardableResult
   public func send<Value>(
     _ action: CaseKeyPath<Action, Value>,
     _ value: Value,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async -> TestStoreTask {
-    await self.send(action(value), assert: updateStateToExpectedResult, file: file, line: line)
+    await self.send(
+      action(value),
+      assert: updateStateToExpectedResult,
+      fileID: fileID,
+      file: filePath,
+      line: line,
+      column: column
+    )
   }
 }
 
@@ -2063,25 +2028,47 @@ extension TestStore {
   /// await store.skipReceivedActions()
   /// ```
   ///
-  /// - Parameter strict: When `true` and there are no in-flight actions to cancel, a test failure
-  ///   will be reported.
-  @MainActor
+  /// - Parameters:
+  ///   - strict: When `true` and there are no in-flight actions to cancel, a test failure
+  ///     will be reported.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   public func skipReceivedActions(
     strict: Bool = true,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
     await Task.megaYield()
-    _ = { self._skipReceivedActions(strict: strict, file: file, line: line) }()
+    _ = {
+      self._skipReceivedActions(
+        strict: strict,
+        fileID: fileID,
+        file: filePath,
+        line: line,
+        column: column
+      )
+    }()
   }
 
   private func _skipReceivedActions(
     strict: Bool = true,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) {
     if strict && self.reducer.receivedActions.isEmpty {
-      XCTFail("There were no received actions to skip.")
+      reportIssue(
+        "There were no received actions to skip.",
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
       return
     }
     guard !self.reducer.receivedActions.isEmpty
@@ -2092,18 +2079,20 @@ extension TestStore {
     } else {
       customDump(self.reducer.receivedActions.map { $0.action }, to: &actions)
     }
-    XCTFailHelper(
+    reportIssueHelper(
       """
       \(self.reducer.receivedActions.count) received action\
-      \(self.reducer.receivedActions.count == 1 ? " was" : "s were") skipped:
+      \(self.reducer.receivedActions.count == 1 ? " was" : "s were") skipped.
 
       \(actions)
       """,
       overrideExhaustivity: self.exhaustivity == .on
         ? .off(showSkippedAssertions: true)
         : self.exhaustivity,
-      file: file,
-      line: line
+      fileID: fileID,
+      filePath: filePath,
+      line: line,
+      column: column
     )
     self.reducer.state = self.reducer.receivedActions.last!.state
     self.reducer.receivedActions = []
@@ -2128,25 +2117,47 @@ extension TestStore {
   /// await store.skipInFlightEffects()
   /// ```
   ///
-  /// - Parameter strict: When `true` and there are no in-flight actions to cancel, a test failure
+  /// - Parameters:
+  ///   - strict: When `true` and there are no in-flight actions to cancel, a test failure
   ///   will be reported.
-  @MainActor
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   public func skipInFlightEffects(
     strict: Bool = true,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
     await Task.megaYield()
-    _ = { self._skipInFlightEffects(strict: strict, file: file, line: line) }()
+    _ = {
+      self._skipInFlightEffects(
+        strict: strict,
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
+    }()
   }
 
   fileprivate func _skipInFlightEffects(
     strict: Bool = true,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) {
     if strict && self.reducer.inFlightEffects.isEmpty {
-      XCTFail("There were no in-flight effects to skip.")
+      reportIssue(
+        "There were no in-flight effects to skip.",
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
+      )
       return
     }
     guard !self.reducer.inFlightEffects.isEmpty
@@ -2159,7 +2170,7 @@ extension TestStore {
       customDump(self.reducer.inFlightEffects.map { $0.action.origin.action }, to: &actions)
     }
 
-    XCTFailHelper(
+    reportIssueHelper(
       """
       \(self.reducer.inFlightEffects.count) in-flight effect\
       \(self.reducer.inFlightEffects.count == 1 ? " was" : "s were") cancelled, originating from:
@@ -2169,149 +2180,47 @@ extension TestStore {
       overrideExhaustivity: self.exhaustivity == .on
         ? .off(showSkippedAssertions: true)
         : self.exhaustivity,
-      file: file,
-      line: line
+      fileID: fileID,
+      filePath: filePath,
+      line: line,
+      column: column
     )
     self.reducer.inFlightEffects = []
   }
 
-  private func XCTFailHelper(
+  private func reportIssueHelper(
     _ message: String = "",
     overrideExhaustivity exhaustivity: Exhaustivity? = nil,
-    file: StaticString,
-    line: UInt
+    fileID: StaticString,
+    filePath: StaticString,
+    line: UInt,
+    column: UInt
   ) {
     let exhaustivity = exhaustivity ?? self.exhaustivity
     switch exhaustivity {
     case .on:
-      XCTFail(message, file: file, line: line)
-    case .off(showSkippedAssertions: true):
-      XCTExpectFailure {
-        XCTFail(
-          """
-          Skipped assertions: …
+      reportIssue(message, fileID: fileID, filePath: filePath, line: line, column: column)
+    case .off(let showSkippedAssertions):
+      if showSkippedAssertions {
+        withExpectedIssue {
+          reportIssue(
+            """
+            Skipped assertions.
 
-          \(message)
-          """,
-          file: file,
-          line: line
-        )
+            \(message)
+            """,
+            fileID: fileID,
+            filePath: filePath,
+            line: line,
+            column: column
+          )
+        }
       }
-    case .off(showSkippedAssertions: false):
-      break
     }
   }
 }
 
-extension TestStore {
-  /// Returns a binding view store for this store.
-  ///
-  /// Useful for testing view state of a store.
-  ///
-  /// ```swift
-  /// let store = TestStore(LoginFeature.State()) {
-  ///   Login.Feature()
-  /// }
-  /// await store.send(.view(.set(\.$email, "blob@pointfree.co"))) {
-  ///   $0.email = "blob@pointfree.co"
-  /// }
-  /// XCTAssertTrue(
-  ///   LoginView.ViewState(store.bindings(action: \.view))
-  ///     .isLoginButtonDisabled
-  /// )
-  ///
-  /// await store.send(.view(.set(\.$password, "whats-the-point?"))) {
-  ///   $0.password = "blob@pointfree.co"
-  ///   $0.isFormValid = true
-  /// }
-  /// XCTAssertFalse(
-  ///   LoginView.ViewState(store.bindings(action: \.view))
-  ///     .isLoginButtonDisabled
-  /// )
-  /// ```
-  ///
-  /// - Parameter toViewAction: A case path from action to a bindable view action.
-  /// - Returns: A binding view store.
-  public func bindings<ViewAction: BindableAction>(
-    action toViewAction: CaseKeyPath<Action, ViewAction>
-  ) -> BindingViewStore<State> where State == ViewAction.State, Action: CasePathable {
-    BindingViewStore(
-      store: Store(initialState: self.state) {
-        BindingReducer(action: toViewAction)
-      }
-      .scope(state: \.self, action: toViewAction)
-    )
-  }
-
-  @available(
-    iOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    macOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    tvOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  @available(
-    watchOS,
-    deprecated: 9999,
-    message:
-      "Use the version of this operator with case key paths, instead. See the following migration guide for more information: https://pointfreeco.github.io/swift-composable-architecture/main/documentation/composablearchitecture/migratingto1.4#Using-case-key-paths"
-  )
-  public func bindings<ViewAction: BindableAction>(
-    action toViewAction: AnyCasePath<Action, ViewAction>
-  ) -> BindingViewStore<State> where State == ViewAction.State {
-    BindingViewStore(
-      store: Store(initialState: self.state) {
-        BindingReducer(action: toViewAction.extract(from:))
-      }
-      .scope(
-        id: nil,
-        state: ToState(\.self),
-        action: toViewAction.embed,
-        isInvalid: nil
-      )
-    )
-  }
-}
-
-extension TestStore where Action: BindableAction, State == Action.State {
-  /// Returns a binding view store for this store.
-  ///
-  /// Useful for testing view state of a store.
-  ///
-  /// ```swift
-  /// let store = TestStore(LoginFeature.State()) {
-  ///   Login.Feature()
-  /// }
-  /// await store.send(.set(\.$email, "blob@pointfree.co")) {
-  ///   $0.email = "blob@pointfree.co"
-  /// }
-  /// XCTAssertTrue(LoginView.ViewState(store.bindings).isLoginButtonDisabled)
-  ///
-  /// await store.send(.set(\.$password, "whats-the-point?")) {
-  ///   $0.password = "blob@pointfree.co"
-  ///   $0.isFormValid = true
-  /// }
-  /// XCTAssertFalse(LoginView.ViewState(store.bindings).isLoginButtonDisabled)
-  /// ```
-  ///
-  /// - Returns: A binding view store.
-  public var bindings: BindingViewStore<State> {
-    self.bindings(action: AnyCasePath())
-  }
-}
-
-/// The type returned from ``TestStore/send(_:assert:file:line:)-2co21`` that represents the
+/// The type returned from ``TestStore/send(_:assert:fileID:file:line:column:)-8f2pl`` that represents the
 /// lifecycle of the effect started from sending an action.
 ///
 /// You can use this value in tests to cancel the effect started from sending an action:
@@ -2336,15 +2245,15 @@ extension TestStore where Action: BindableAction, State == Action.State {
 /// await store.send(.stopTimerButtonTapped).finish()
 /// ```
 ///
-/// See ``TestStore/finish(timeout:file:line:)-53gi5`` for the ability to await all in-flight
-/// effects in the test store.
+/// See ``TestStore/finish(timeout:fileID:file:line:column:)-klnc`` for the ability to await all
+/// in-flight effects in the test store.
 ///
 /// See ``StoreTask`` for the analog provided to ``Store``.
 public struct TestStoreTask: Hashable, Sendable {
   fileprivate let rawValue: Task<Void, Never>?
-  fileprivate let timeout: UInt64
+  fileprivate let timeout: Duration
 
-  @_spi(Canary) public init(rawValue: Task<Void, Never>?, timeout: UInt64) {
+  @_spi(Canary) public init(rawValue: Task<Void, Never>?, timeout: Duration) {
     self.rawValue = rawValue
     self.timeout = timeout
   }
@@ -2369,38 +2278,28 @@ public struct TestStoreTask: Hashable, Sendable {
     await self.rawValue?.cancellableValue
   }
 
-  // NB: Only needed until Xcode ships a macOS SDK that uses the 5.7 standard library.
-  // See: https://forums.swift.org/t/xcode-14-rc-cannot-specialize-protocol-type/60171/15
-  #if (canImport(RegexBuilder) || !os(macOS) && !targetEnvironment(macCatalyst))
-    /// Asserts the underlying task finished.
-    ///
-    /// - Parameter duration: The amount of time to wait before asserting.
-    @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-    public func finish(
-      timeout duration: Duration,
-      file: StaticString = #file,
-      line: UInt = #line
-    ) async {
-      await self.finish(timeout: duration.nanoseconds, file: file, line: line)
-    }
-  #endif
-
   /// Asserts the underlying task finished.
   ///
-  /// - Parameter nanoseconds: The amount of time to wait before asserting.
-  @_disfavoredOverload
+  /// - Parameters:
+  ///   - duration: The amount of time to wait before asserting.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   public func finish(
-    timeout nanoseconds: UInt64? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    timeout duration: Duration? = nil,
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
-    let nanoseconds = nanoseconds ?? self.timeout
+    let duration = duration ?? self.timeout
     await Task.megaYield()
     do {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await self.rawValue?.cancellableValue }
         group.addTask {
-          try await Task.sleep(nanoseconds: nanoseconds)
+          try await Task.sleep(for: duration)
           throw CancellationError()
         }
         try await group.next()
@@ -2408,7 +2307,7 @@ public struct TestStoreTask: Hashable, Sendable {
       }
     } catch {
       let timeoutMessage =
-        nanoseconds != self.timeout
+        duration != self.timeout
         ? #"try increasing the duration of this assertion's "timeout""#
         : #"configure this assertion with an explicit "timeout""#
       let suggestion = """
@@ -2422,15 +2321,17 @@ public struct TestStoreTask: Hashable, Sendable {
         \(timeoutMessage).
         """
 
-      XCTFail(
+      reportIssue(
         """
         Expected task to finish, but it is still in-flight\
-        \(nanoseconds > 0 ? " after \(Double(nanoseconds)/Double(NSEC_PER_SEC)) seconds" : "").
+        \(duration > .zero ? " after \(duration)" : "").
 
         \(suggestion)
         """,
-        file: file,
-        line: line
+        fileID: fileID,
+        filePath: filePath,
+        line: line,
+        column: column
       )
     }
   }
@@ -2444,7 +2345,7 @@ public struct TestStoreTask: Hashable, Sendable {
   }
 }
 
-class TestReducer<State, Action>: Reducer {
+class TestReducer<State: Equatable, Action>: Reducer {
   let base: Reduce<State, Action>
   var dependencies: DependencyValues
   let effectDidSubscribe = AsyncStream.makeStream(of: Void.self)
@@ -2463,7 +2364,7 @@ class TestReducer<State, Action>: Reducer {
     self.state = initialState
   }
 
-  func reduce(into state: inout State, action: TestAction) -> Effect<TestAction> {
+  func _reduce(into state: inout State, action: TestAction) -> Effect<TestAction> {
     var dependencies = self.dependencies
     let dismiss = dependencies.dismiss.dismiss
     dependencies.dismiss = DismissEffect { [weak store] in
@@ -2477,12 +2378,12 @@ class TestReducer<State, Action>: Reducer {
 
     let effects: Effect<Action>
     switch action.origin {
-    case let .send(action):
-      effects = reducer.reduce(into: &state, action: action)
+    case .send(let action):
+      effects = reducer._reduce(into: &state, action: action)
       self.state = state
 
-    case let .receive(action):
-      effects = reducer.reduce(into: &state, action: action)
+    case .receive(let action):
+      effects = reducer._reduce(into: &state, action: action)
       self.receivedActions.append((action, state))
     }
 
@@ -2510,7 +2411,15 @@ class TestReducer<State, Action>: Reducer {
               self?.inFlightEffects.remove(effect)
             }
           )
-          .map { .init(origin: .receive($0), file: action.file, line: action.line) }
+          .map {
+            .init(
+              origin: .receive($0),
+              fileID: action.fileID,
+              filePath: action.filePath,
+              line: action.line,
+              column: action.column
+            )
+          }
       }
     }
   }
@@ -2530,8 +2439,10 @@ class TestReducer<State, Action>: Reducer {
 
   struct TestAction {
     let origin: Origin
-    let file: StaticString
+    let fileID: StaticString
+    let filePath: StaticString
     let line: UInt
+    let column: UInt
 
     fileprivate var action: Action {
       self.origin.action
@@ -2542,25 +2453,13 @@ class TestReducer<State, Action>: Reducer {
       case send(Action)
       fileprivate var action: Action {
         switch self {
-        case let .receive(action), let .send(action):
+        case .receive(let action), .send(let action):
           return action
         }
       }
     }
   }
 }
-
-// NB: Only needed until Xcode ships a macOS SDK that uses the 5.7 standard library.
-// See: https://forums.swift.org/t/xcode-14-rc-cannot-specialize-protocol-type/60171/15
-#if (canImport(RegexBuilder) || !os(macOS) && !targetEnvironment(macCatalyst))
-  @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-  extension Duration {
-    fileprivate var nanoseconds: UInt64 {
-      UInt64(self.components.seconds) * NSEC_PER_SEC
-        + UInt64(self.components.attoseconds) / 1_000_000_000
-    }
-  }
-#endif
 
 /// The exhaustivity of assertions made by the test store.
 public enum Exhaustivity: Equatable, Sendable {
@@ -2571,12 +2470,12 @@ public enum Exhaustivity: Equatable, Sendable {
   /// deallocated.
   ///
   /// To manually skip actions or effects, use
-  /// ``TestStore/skipReceivedActions(strict:file:line:)-a4ri`` or
-  /// ``TestStore/skipInFlightEffects(strict:file:line:)-5hbsk``.
+  /// ``TestStore/skipReceivedActions(strict:fileID:file:line:column:)`` or
+  /// ``TestStore/skipInFlightEffects(strict:fileID:file:line:column:)``.
   ///
   /// To partially match an action received from an effect, use
-  /// ``TestStore/receive(_:timeout:assert:file:line:)-6325h`` or
-  /// ``TestStore/receive(_:timeout:assert:file:line:)-7md3m``.
+  /// ``TestStore/receive(_:timeout:assert:fileID:file:line:column:)-53wic`` or
+  /// ``TestStore/receive(_:timeout:assert:fileID:file:line:column:)-35638``.
 
   case on
 
@@ -2599,7 +2498,6 @@ public enum Exhaustivity: Equatable, Sendable {
 }
 
 extension TestStore {
-  @MainActor
   @available(
     *,
     unavailable,
@@ -2609,9 +2507,32 @@ extension TestStore {
   public func receive(
     _ expectedAction: Action,
     assert updateStateToExpectedResult: ((_ state: inout State) throws -> Void)? = nil,
-    file: StaticString = #file,
-    line: UInt = #line
+    fileID: StaticString = #fileID,
+    file filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) async {
     fatalError()
   }
+}
+
+// TODO: Move to `swift-issue-reporting`?
+private func _withIssueContext<R>(
+  fileID: StaticString,
+  filePath: StaticString,
+  line: UInt,
+  column: UInt,
+  isolation: isolated (any Actor)? = #isolation,
+  operation: () async throws -> R
+) async rethrows -> R {
+  let result = try await withIssueContext(
+    fileID: fileID,
+    filePath: filePath,
+    line: line,
+    column: column,
+    isolation: isolation,
+    operation: operation
+  )
+  await Task.yield()
+  return result
 }

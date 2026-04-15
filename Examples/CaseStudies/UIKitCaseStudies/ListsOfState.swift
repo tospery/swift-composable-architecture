@@ -23,7 +23,9 @@ struct CounterList {
 let cellIdentifier = "Cell"
 
 final class CountersTableViewController: UITableViewController {
-  let store: StoreOf<CounterList>
+  private let store: StoreOf<CounterList>
+
+  var observations: [IndexPath: ObserveToken] = [:]
 
   init(store: StoreOf<CounterList>) {
     self.store = store
@@ -51,7 +53,8 @@ final class CountersTableViewController: UITableViewController {
   {
     let cell = tableView.dequeueReusableCell(withIdentifier: cellIdentifier, for: indexPath)
     cell.accessoryType = .disclosureIndicator
-    observe { [weak self] in
+    observations[indexPath]?.cancel()
+    observations[indexPath] = observe { [weak self] in
       guard let self else { return }
       cell.textLabel?.text = "\(store.counters[indexPath.row].count)"
     }
@@ -60,7 +63,7 @@ final class CountersTableViewController: UITableViewController {
 
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     let id = store.counters[indexPath.row].id
-    if let store = store.scope(state: \.counters[id:id], action: \.counters[id:id]) {
+    if let store = store.scope(state: \.counters[id: id], action: \.counters[id: id]) {
       navigationController?.pushViewController(CounterViewController(store: store), animated: true)
     }
   }

@@ -1,4 +1,5 @@
 @_spi(Reflection) import CasePaths
+import Foundation
 
 extension DependencyValues {
   var navigationIDPath: NavigationIDPath {
@@ -22,7 +23,7 @@ struct NavigationIDPath: Hashable, Sendable {
 
   var prefixes: [NavigationIDPath] {
     (0...self.path.count).map { index in
-      NavigationIDPath(path: Array(self.path.dropFirst(index)))
+      NavigationIDPath(path: Array(self.path.prefix(self.path.count - index)))
     }
   }
 
@@ -30,23 +31,27 @@ struct NavigationIDPath: Hashable, Sendable {
     .init(path: self.path + [element])
   }
 
+  mutating func append(_ element: NavigationID) {
+    self.path.append(element)
+  }
+
   public var id: Self { self }
 }
 
 struct NavigationID: Hashable, @unchecked Sendable {
   private let kind: Kind
-  private let identifier: AnyHashableSendable?
+  private let identifier: AnyHashable?
   private let tag: UInt32?
 
-  enum Kind: Hashable, @unchecked Sendable {
+  enum Kind: Hashable {
     case casePath(root: Any.Type, value: Any.Type)
     case keyPath(AnyKeyPath)
 
     static func == (lhs: Self, rhs: Self) -> Bool {
       switch (lhs, rhs) {
-      case let (.casePath(lhsRoot, lhsValue), .casePath(rhsRoot, rhsValue)):
+      case (.casePath(let lhsRoot, let lhsValue), .casePath(let rhsRoot, let rhsValue)):
         return lhsRoot == rhsRoot && lhsValue == rhsValue
-      case let (.keyPath(lhs), .keyPath(rhs)):
+      case (.keyPath(let lhs), .keyPath(let rhs)):
         return lhs == rhs
       case (.casePath, _), (.keyPath, _):
         return false
@@ -55,11 +60,11 @@ struct NavigationID: Hashable, @unchecked Sendable {
 
     func hash(into hasher: inout Hasher) {
       switch self {
-      case let .casePath(root: root, value: value):
+      case .casePath(let root, let value):
         hasher.combine(0)
         hasher.combine(ObjectIdentifier(root))
         hasher.combine(ObjectIdentifier(value))
-      case let .keyPath(keyPath):
+      case .keyPath(let keyPath):
         hasher.combine(1)
         hasher.combine(keyPath)
       }
@@ -73,7 +78,7 @@ struct NavigationID: Hashable, @unchecked Sendable {
     self.kind = .keyPath(keyPath)
     self.tag = EnumMetadata(Value.self)?.tag(of: base)
     if let id = _identifiableID(base) ?? EnumMetadata.project(base).flatMap(_identifiableID) {
-      self.identifier = AnyHashableSendable(id)
+      self.identifier = id
     } else {
       self.identifier = nil
     }
@@ -88,7 +93,7 @@ struct NavigationID: Hashable, @unchecked Sendable {
     self.identifier = AnyHashableSendable(id)
   }
 
-  init<Value, Root, ID: Hashable>(
+  init<Value, Root, ID: Hashable & Sendable>(
     id: ID,
     keyPath: KeyPath<Root, IdentifiedArray<ID, Value>>
   ) {
@@ -105,10 +110,16 @@ struct NavigationID: Hashable, @unchecked Sendable {
     self.kind = .casePath(root: Root.self, value: Value.self)
     self.tag = EnumMetadata(Root.self)?.tag(of: root)
     if let id = _identifiableID(root) ?? _identifiableID(value) {
-      self.identifier = AnyHashableSendable(id)
+      self.identifier = id
     } else {
       self.identifier = nil
     }
+  }
+
+  init() {
+    self.kind = .keyPath(\Void.self)
+    self.identifier = UUID()
+    self.tag = nil
   }
 
   static func == (lhs: Self, rhs: Self) -> Bool {
@@ -121,12 +132,5 @@ struct NavigationID: Hashable, @unchecked Sendable {
     hasher.combine(self.kind)
     hasher.combine(self.identifier)
     hasher.combine(self.tag)
-  }
-}
-
-@_spi(Internals) public struct AnyHashableSendable: Hashable, @unchecked Sendable {
-  @_spi(Internals) public let base: AnyHashable
-  init<Base: Hashable & Sendable>(_ base: Base) {
-    self.base = base
   }
 }

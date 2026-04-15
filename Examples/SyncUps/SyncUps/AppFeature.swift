@@ -3,7 +3,7 @@ import SwiftUI
 
 @Reducer
 struct AppFeature {
-  @Reducer(state: .equatable)
+  @Reducer
   enum Path {
     case detail(SyncUpDetail)
     case meeting(Meeting, syncUp: SyncUp)
@@ -30,9 +30,9 @@ struct AppFeature {
     }
     Reduce { state, action in
       switch action {
-      case let .path(.element(id, .detail(.delegate(delegateAction)))):
+      case .path(.element(_, .detail(.delegate(let delegateAction)))):
         switch delegateAction {
-        case let .startMeeting(sharedSyncUp):
+        case .startMeeting(let sharedSyncUp):
           state.path.append(.record(RecordMeeting.State(syncUp: sharedSyncUp)))
           return .none
         }
@@ -47,22 +47,21 @@ struct AppFeature {
     .forEach(\.path, action: \.path)
   }
 }
+extension AppFeature.Path.State: Equatable {}
 
 struct AppView: View {
   @Bindable var store: StoreOf<AppFeature>
 
   var body: some View {
     NavigationStack(path: $store.scope(state: \.path, action: \.path)) {
-      SyncUpsListView(
-        store: store.scope(state: \.syncUpsList, action: \.syncUpsList)
-      )
+      SyncUpsListView(store: store.scope(state: \.syncUpsList, action: \.syncUpsList))
     } destination: { store in
       switch store.case {
-      case let .detail(store):
+      case .detail(let store):
         SyncUpDetailView(store: store)
-      case let .meeting(meeting, syncUp):
+      case .meeting(let meeting, let syncUp):
         MeetingView(meeting: meeting, syncUp: syncUp)
-      case let .record(store):
+      case .record(let store):
         RecordMeetingView(store: store)
       }
     }
@@ -75,7 +74,7 @@ struct AppView: View {
     .productMock,
     .engineeringMock,
   ]
-  return AppView(
+  AppView(
     store: Store(initialState: AppFeature.State()) {
       AppFeature()
     }

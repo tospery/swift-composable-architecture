@@ -49,10 +49,11 @@ day-to-day when building applications, such as:
 
 - <doc:GettingStarted>
 - <doc:DependencyManagement>
-- <doc:Testing>
+- <doc:TestingTCA>
 - <doc:Navigation>
 - <doc:SharingState>
 - <doc:Performance>
+- <doc:FAQ>
 
 ### Tutorials
 
@@ -61,7 +62,7 @@ day-to-day when building applications, such as:
 
 ### State management
 
-- <doc:Reducers>
+- ``Reducer``
 - ``Effect``
 - ``Store``
 - <doc:SharingState>
@@ -69,7 +70,7 @@ day-to-day when building applications, such as:
 ### Testing
 
 - ``TestStore``
-- <doc:Testing>
+- <doc:TestingTCA>
 
 ### Integrations
 

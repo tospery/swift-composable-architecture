@@ -36,7 +36,7 @@ public struct Game: Sendable {
   public var body: some Reducer<State, Action> {
     Reduce { state, action in
       switch action {
-      case let .cellTapped(row, column):
+      case .cellTapped(let row, let column):
         guard
           state.board[row][column] == nil,
           !state.board.hasWinner
@@ -82,7 +82,7 @@ public enum Player: Equatable, Sendable {
   }
 }
 
-extension Three where Element == Three<Player?> {
+extension Three<Three<Player?>> {
   public static let empty = Self(
     .init(nil, nil, nil),
     .init(nil, nil, nil),

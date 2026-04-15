@@ -1,88 +1,116 @@
-#if swift(>=5.9)
-  @_spi(Logging) import ComposableArchitecture
-  import SwiftUI
-  import XCTest
+@_spi(Logging) import ComposableArchitecture
+import SwiftUI
+import XCTest
 
-  @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-  final class StorePerceptionTests: BaseTCATestCase {
+final class StorePerceptionTests: BaseTCATestCase {
+  @MainActor
+  func testPerceptionCheck_SkipWhenOutsideView() {
+    let store = Store(initialState: Feature.State()) {
+      Feature()
+    }
+    store.send(.tap)
+  }
+
+  @MainActor
+  func testPerceptionCheck_SkipWhenActionClosureOfView() {
     @MainActor
-    func testPerceptionCheck_SkipWhenOutsideView() {
+    struct FeatureView: View {
       let store = Store(initialState: Feature.State()) {
         Feature()
       }
-      store.send(.tap)
+      var body: some View {
+        Text("Hi")
+          .onAppear { store.send(.tap) }
+      }
     }
+    render(FeatureView())
+  }
 
+  #if !os(macOS)
     @MainActor
-    func testPerceptionCheck_SkipWhenActionClosureOfView() {
+    @available(*, deprecated)
+    func testPerceptionCheck_AccessStateWithoutTracking() {
+      @MainActor
       struct FeatureView: View {
         let store = Store(initialState: Feature.State()) {
           Feature()
         }
         var body: some View {
-          Text("Hi")
-            .onAppear { store.send(.tap) }
+          Text(store.count.description)
         }
       }
-      render(FeatureView())
-    }
-
-    @MainActor
-    func testPerceptionCheck_AccessStateWithoutTracking() {
-      if #unavailable(iOS 17, macOS 14, tvOS 17, watchOS 10) {
-        struct FeatureView: View {
-          let store = Store(initialState: Feature.State()) {
-            Feature()
-          }
-          var body: some View {
-            Text(store.count.description)
-          }
-        }
+      #if DEBUG && !os(visionOS)
         XCTExpectFailure {
           render(FeatureView())
         } issueMatcher: {
-          $0.compactDescription == """
-            Perceptible state was accessed but is not being tracked. Track changes to state by \
-            wrapping your view in a 'WithPerceptionTracking' view.
-            """
+          $0.compactDescription.contains("Perceptible state was accessed")
+        }
+      #endif
+    }
+  #endif
+
+  @available(iOS, deprecated: 17)
+  @available(macOS, deprecated: 14)
+  @available(tvOS, deprecated: 17)
+  @available(watchOS, deprecated: 10)
+  @MainActor
+  func testPerceptionCheck_AccessStateWithTracking() {
+    @MainActor
+    struct FeatureView: View {
+      let store = Store(initialState: Feature.State()) {
+        Feature()
+      }
+      var body: some View {
+        WithPerceptionTracking {
+          Text(store.count.description)
         }
       }
     }
+    render(FeatureView())
+  }
 
-    @MainActor
-    func testPerceptionCheck_AccessStateWithTracking() {
-      struct FeatureView: View {
+  @MainActor
+  func testPerceptionCheck_ViewRepresentable_publisher() {
+    #if canImport(UIKit)
+      struct ViewRepresentable: UIViewRepresentable {
         let store = Store(initialState: Feature.State()) {
           Feature()
         }
-        var body: some View {
-          WithPerceptionTracking {
-            Text(store.count.description)
+        func makeUIView(context: Context) -> UILabel {
+          let label = UILabel()
+          let cancellable = store.publisher.sink { [weak label] state in
+            label?.text = "\(state.count)"
           }
+          objc_setAssociatedObject(
+            label, cancellableKey, cancellable, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+          return label
         }
+        func updateUIView(_ view: UILabel, context: Context) {}
       }
-      render(FeatureView())
-    }
-
-    @MainActor
-    private func render(_ view: some View) {
-      let image = ImageRenderer(content: view).cgImage
-      _ = image
-    }
+      render(ViewRepresentable())
+    #endif
   }
 
-  @Reducer
-  private struct Feature {
-    @ObservableState
-    struct State {
-      var count = 0
-    }
-    enum Action { case tap }
-    var body: some ReducerOf<Self> {
-      Reduce { state, action in
-        state.count += 1
-        return .none
-      }
+  @MainActor
+  private func render(_ view: some View) {
+    let image = ImageRenderer(content: view).cgImage
+    _ = image
+  }
+}
+
+@MainActor private let cancellableKey = malloc(1)!
+
+@Reducer
+private struct Feature {
+  @ObservableState
+  struct State {
+    var count = 0
+  }
+  enum Action { case tap }
+  var body: some ReducerOf<Self> {
+    Reduce { state, action in
+      state.count += 1
+      return .none
     }
   }
-#endif
+}

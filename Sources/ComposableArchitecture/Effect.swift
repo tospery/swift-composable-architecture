@@ -1,14 +1,17 @@
-import Combine
+@preconcurrency import Combine
 import Foundation
 import SwiftUI
-import XCTestDynamicOverlay
 
-public struct Effect<Action> {
+public struct Effect<Action>: Sendable {
   @usableFromInline
-  enum Operation {
+  enum Operation: Sendable {
     case none
     case publisher(AnyPublisher<Action, Never>)
-    case run(TaskPriority? = nil, @Sendable (_ send: Send<Action>) async -> Void)
+    case run(
+      name: String? = nil,
+      priority: TaskPriority? = nil,
+      operation: @Sendable (_ send: Send<Action>) async -> Void
+    )
   }
 
   @usableFromInline
@@ -47,11 +50,11 @@ extension Effect {
 
   /// Wraps an asynchronous unit of work that can emit actions any number of times in an effect.
   ///
-  /// For example, if you had an async stream in a dependency client:
+  /// For example, if you had an async sequence in a dependency client:
   ///
   /// ```swift
   /// struct EventsClient {
-  ///   var events: () -> AsyncStream<Event>
+  ///   var events: () -> any AsyncSequence<Event, Never>
   /// }
   /// ```
   ///
@@ -69,44 +72,58 @@ extension Effect {
   ///
   /// See ``Send`` for more information on how to use the `send` argument passed to `run`'s closure.
   ///
-  /// The closure provided to ``run(priority:operation:catch:fileID:line:)`` is allowed to
-  /// throw, but any non-cancellation errors thrown will cause a runtime warning when run in the
-  /// simulator or on a device, and will cause a test failure in tests. To catch non-cancellation
-  /// errors use the `catch` trailing closure.
+  /// The closure provided to ``run(priority:operation:catch:fileID:filePath:line:column:)`` is
+  /// allowed to throw, but any non-cancellation errors thrown will cause a runtime warning when run
+  /// in the simulator or on a device, and will cause a test failure in tests. To catch
+  /// non-cancellation errors use the `catch` trailing closure.
   ///
   /// - Parameters:
   ///   - priority: Priority of the underlying task. If `nil`, the priority will come from
   ///     `Task.currentPriority`.
+  ///   - name: An optional name to associate with the task that runs this effect.
   ///   - operation: The operation to execute.
-  ///   - catch: An error handler, invoked if the operation throws an error other than
+  ///   - handler: An error handler, invoked if the operation throws an error other than
   ///     `CancellationError`.
+  ///   - fileID: The fileID.
+  ///   - filePath: The filePath.
+  ///   - line: The line.
+  ///   - column: The column.
   /// - Returns: An effect wrapping the given asynchronous work.
   public static func run(
     priority: TaskPriority? = nil,
+    name: String? = nil,
     operation: @escaping @Sendable (_ send: Send<Action>) async throws -> Void,
-    catch handler: (@Sendable (_ error: Error, _ send: Send<Action>) async -> Void)? = nil,
+    catch handler: (@Sendable (_ error: any Error, _ send: Send<Action>) async -> Void)? = nil,
     fileID: StaticString = #fileID,
-    line: UInt = #line
+    filePath: StaticString = #filePath,
+    line: UInt = #line,
+    column: UInt = #column
   ) -> Self {
     withEscapedDependencies { escaped in
       Self(
-        operation: .run(priority) { send in
+        operation: .run(name: name, priority: priority) { send in
           await escaped.yield {
             do {
               try await operation(send)
             } catch is CancellationError {
               return
             } catch {
+              guard !Task.isCancelled
+              else { return }
               guard let handler else {
-                runtimeWarn(
+                reportIssue(
                   """
-                  An "Effect.run" returned from "\(fileID):\(line)" threw an unhandled error. …
+                  An "Effect.run" returned from "\(fileID):\(line)" threw an unhandled error.
 
                   \(String(customDumping: error).indent(by: 4))
 
                   All non-cancellation errors must be explicitly handled via the "catch" parameter \
                   on "Effect.run", or via a "do" block.
-                  """
+                  """,
+                  fileID: fileID,
+                  filePath: filePath,
+                  line: line,
+                  column: column
                 )
                 return
               }
@@ -130,47 +147,32 @@ extension Effect {
   public static func send(_ action: Action) -> Self {
     Self(operation: .publisher(Just(action).eraseToAnyPublisher()))
   }
-
-  /// Initializes an effect that immediately emits the action passed in.
-  ///
-  /// > Note: We do not recommend using `Effect.send` to share logic. Instead, limit usage to
-  /// > child-parent communication, where a child may want to emit a "delegate" action for a parent
-  /// > to listen to.
-  /// >
-  /// > For more information, see <doc:Performance#Sharing-logic-with-actions>.
-  ///
-  /// - Parameters:
-  ///   - action: The action that is immediately emitted by the effect.
-  ///   - animation: An animation.
-  public static func send(_ action: Action, animation: Animation? = nil) -> Self {
-    .send(action).animation(animation)
-  }
 }
 
 /// A type that can send actions back into the system when used from
-/// ``Effect/run(priority:operation:catch:fileID:line:)``.
+/// ``Effect/run(priority:operation:catch:fileID:filePath:line:column:)``.
 ///
 /// This type implements [`callAsFunction`][callAsFunction] so that you invoke it as a function
 /// rather than calling methods on it:
 ///
 /// ```swift
 /// return .run { send in
-///   send(.started)
-///   defer { send(.finished) }
+///   await send(.started)
 ///   for await event in self.events {
 ///     send(.event(event))
 ///   }
+///   await send(.finished)
 /// }
 /// ```
 ///
-/// You can also send actions with animation:
+/// You can also send actions with animation and transaction:
 ///
 /// ```swift
-/// send(.started, animation: .spring())
-/// defer { send(.finished, animation: .default) }
+/// await send(.started, animation: .spring())
+/// await send(.finished, transaction: .init(animation: .default))
 /// ```
 ///
-/// See ``Effect/run(priority:operation:catch:fileID:line:)`` for more information on how to
+/// See ``Effect/run(priority:operation:catch:fileID:filePath:line:column:)`` for more information on how to
 /// use this value to construct effects that can emit any number of times in an asynchronous
 /// context.
 ///
@@ -213,6 +215,8 @@ public struct Send<Action>: Sendable {
   }
 }
 
+public typealias SendOf<R: Reducer> = Send<R.Action>
+
 // MARK: - Composing Effects
 
 extension Effect {
@@ -232,7 +236,7 @@ extension Effect {
   /// - Parameter effects: A sequence of effects.
   /// - Returns: A new effect
   @inlinable
-  public static func merge<S: Sequence>(_ effects: S) -> Self where S.Element == Self {
+  public static func merge(_ effects: some Sequence<Self>) -> Self {
     effects.reduce(.none) { $0.merge(with: $1) }
   }
 
@@ -257,14 +261,17 @@ extension Effect {
           .eraseToAnyPublisher()
         )
       )
-    case let (.run(lhsPriority, lhsOperation), .run(rhsPriority, rhsOperation)):
+    case (
+      .run(let lhsName, let lhsPriority, let lhsOperation),
+      .run(let rhsName, let rhsPriority, let rhsOperation)
+    ):
       return Self(
         operation: .run { send in
           await withTaskGroup(of: Void.self) { group in
-            group.addTask(priority: lhsPriority) {
+            group.addTask(name: lhsName, priority: lhsPriority) {
               await lhsOperation(send)
             }
-            group.addTask(priority: rhsPriority) {
+            group.addTask(name: rhsName, priority: rhsPriority) {
               await rhsOperation(send)
             }
           }
@@ -278,6 +285,30 @@ extension Effect {
   ///
   /// - Parameter effects: A variadic list of effects.
   /// - Returns: A new effect
+  #if ComposableArchitecture2Deprecations
+    @available(*, deprecated, message: "Sequence work directly in a '.run' instead")
+  #else
+    @available(
+      iOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      macOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      tvOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      watchOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+  #endif
   @inlinable
   public static func concatenate(_ effects: Self...) -> Self {
     Self.concatenate(effects)
@@ -288,8 +319,32 @@ extension Effect {
   ///
   /// - Parameter effects: A collection of effects.
   /// - Returns: A new effect
+  #if ComposableArchitecture2Deprecations
+    @available(*, deprecated, message: "Sequence work directly in a '.run' instead")
+  #else
+    @available(
+      iOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      macOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      tvOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      watchOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+  #endif
   @inlinable
-  public static func concatenate<C: Collection>(_ effects: C) -> Self where C.Element == Self {
+  public static func concatenate(_ effects: some Collection<Self>) -> Self {
     effects.reduce(.none) { $0.concatenate(with: $1) }
   }
 
@@ -299,6 +354,30 @@ extension Effect {
   /// - Parameter other: Another effect.
   /// - Returns: An effect that runs this effect, and after it completes or is cancelled, runs the
   ///   other.
+  #if ComposableArchitecture2Deprecations
+    @available(*, deprecated, message: "Sequence work directly in a '.run' instead")
+  #else
+    @available(
+      iOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      macOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      tvOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+    @available(
+      watchOS,
+      deprecated: 9999,
+      message: "Sequence work directly in a '.run' instead"
+    )
+  #endif
   @inlinable
   @_disfavoredOverload
   public func concatenate(with other: Self) -> Self {
@@ -317,16 +396,21 @@ extension Effect {
           .eraseToAnyPublisher()
         )
       )
-    case let (.run(lhsPriority, lhsOperation), .run(rhsPriority, rhsOperation)):
+    case (
+      .run(let lhsName, let lhsPriority, let lhsOperation),
+      .run(let rhsName, let rhsPriority, let rhsOperation)
+    ):
       return Self(
         operation: .run { send in
           if let lhsPriority {
-            await Task(priority: lhsPriority) { await lhsOperation(send) }.cancellableValue
+            await Task(name: lhsName, priority: lhsPriority) { await lhsOperation(send) }
+              .cancellableValue
           } else {
             await lhsOperation(send)
           }
           if let rhsPriority {
-            await Task(priority: rhsPriority) { await rhsOperation(send) }.cancellableValue
+            await Task(name: rhsName, priority: rhsPriority) { await rhsOperation(send) }
+              .cancellableValue
           } else {
             await rhsOperation(send)
           }
@@ -340,12 +424,40 @@ extension Effect {
   /// - Parameter transform: A closure that transforms the upstream effect's action to a new action.
   /// - Returns: A publisher that uses the provided closure to map elements from the upstream effect
   ///   to new elements that it then publishes.
+  #if ComposableArchitecture2Deprecations
+    @available(
+      *,
+      deprecated,
+      message: "Avoid transforming effects; construct them directly in a feature instead"
+    )
+  #else
+    @available(
+      iOS,
+      deprecated: 9999,
+      message: "Avoid transforming effects; construct them directly in a feature instead"
+    )
+    @available(
+      macOS,
+      deprecated: 9999,
+      message: "Avoid transforming effects; construct them directly in a feature instead"
+    )
+    @available(
+      tvOS,
+      deprecated: 9999,
+      message: "Avoid transforming effects; construct them directly in a feature instead"
+    )
+    @available(
+      watchOS,
+      deprecated: 9999,
+      message: "Avoid transforming effects; construct them directly in a feature instead"
+    )
+  #endif
   @inlinable
-  public func map<T>(_ transform: @escaping (Action) -> T) -> Effect<T> {
+  public func map<T>(_ transform: @escaping @Sendable (Action) -> T) -> Effect<T> {
     switch self.operation {
     case .none:
       return .none
-    case let .publisher(publisher):
+    case .publisher(let publisher):
       return .init(
         operation: .publisher(
           publisher
@@ -361,10 +473,10 @@ extension Effect {
             .eraseToAnyPublisher()
         )
       )
-    case let .run(priority, operation):
+    case .run(let name, let priority, let operation):
       return withEscapedDependencies { escaped in
         .init(
-          operation: .run(priority) { send in
+          operation: .run(name: name, priority: priority) { send in
             await escaped.yield {
               await operation(
                 Send { action in
@@ -378,3 +490,39 @@ extension Effect {
     }
   }
 }
+
+#if swift(<6.2)
+  // NB: Backwards-compatible shims.
+  extension Task {
+    @discardableResult
+    @usableFromInline
+    init(
+      name: String?,
+      priority: TaskPriority? = nil,
+      operation: @escaping @Sendable () async -> Success
+    ) where Failure == Never {
+      self.init(priority: priority, operation: operation)
+    }
+
+    @discardableResult
+    @usableFromInline
+    init(
+      name: String?,
+      priority: TaskPriority? = nil,
+      operation: @escaping @Sendable () async throws -> Success
+    ) where Failure == any Error {
+      self.init(priority: priority, operation: operation)
+    }
+  }
+
+  extension TaskGroup {
+    @usableFromInline
+    mutating func addTask(
+      name: String?,
+      priority: TaskPriority? = nil,
+      operation: @escaping @Sendable () async -> ChildTaskResult
+    ) {
+      addTask(priority: priority, operation: operation)
+    }
+  }
+#endif

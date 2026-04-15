@@ -63,7 +63,7 @@ private struct SignUpFeature {
 
 struct SignUpFlow: View {
   @Bindable private var store = Store(
-    initialState: SignUpFeature.State(signUpData: Shared(SignUpData()))
+    initialState: SignUpFeature.State(signUpData: Shared(value: SignUpData()))
   ) {
     SignUpFeature()
   }
@@ -86,13 +86,13 @@ struct SignUpFlow: View {
       .navigationTitle("Sign up")
     } destination: { store in
       switch store.case {
-      case let .basics(store):
+      case .basics(let store):
         BasicsStep(store: store)
-      case let .personalInfo(store):
+      case .personalInfo(let store):
         PersonalInfoStep(store: store)
-      case let .summary(store):
+      case .summary(let store):
         SummaryStep(store: store)
-      case let .topics(store):
+      case .topics(let store):
         TopicsStep(store: store)
       }
     }
@@ -119,13 +119,14 @@ private struct BasicsStep: View {
   @Bindable var store: StoreOf<BasicsFeature>
 
   var body: some View {
+    @Binding(store.$signUpData) var signUpData
     Form {
       Section {
-        TextField("Email", text: $store.signUpData.email)
+        TextField("Email", text: $signUpData.email)
       }
       Section {
-        SecureField("Password", text: $store.signUpData.password)
-        SecureField("Password confirmation", text: $store.signUpData.passwordConfirmation)
+        SecureField("Password", text: $signUpData.password)
+        SecureField("Password confirmation", text: $signUpData.passwordConfirmation)
       }
     }
     .navigationTitle("Basics")
@@ -170,11 +171,12 @@ private struct PersonalInfoStep: View {
   @Bindable var store: StoreOf<PersonalInfoFeature>
 
   var body: some View {
+    @Binding(store.$signUpData) var signUpData
     Form {
       Section {
-        TextField("First name", text: $store.signUpData.firstName)
-        TextField("Last name", text: $store.signUpData.lastName)
-        TextField("Phone number", text: $store.signUpData.phoneNumber)
+        TextField("First name", text: $signUpData.firstName)
+        TextField("Last name", text: $signUpData.lastName)
+        TextField("Phone number", text: $signUpData.phoneNumber)
       }
     }
     .navigationTitle("Personal info")
@@ -254,13 +256,14 @@ private struct TopicsStep: View {
   @Bindable var store: StoreOf<TopicsFeature>
 
   var body: some View {
+    @Binding(store.$topics) var topics
     Form {
       Section {
         Text("Please choose all the topics you are interested in.")
       }
       Section {
         ForEach(SignUpData.Topic.allCases) { topic in
-          Toggle(isOn: $store.topics[contains: topic]) {
+          Toggle(isOn: $topics[contains: topic]) {
             Text(topic.rawValue)
           }
         }
@@ -406,16 +409,14 @@ private struct SummaryStep: View {
       }
     }
     .navigationTitle("Summary")
-    .sheet(
-      item: $store.scope(state: \.destination?.basics, action: \.destination.basics)
-    ) { basicsStore in
+    .sheet(item: $store.scope(state: \.$destination, action: \.destination).basics) { basicsStore in
       NavigationStack {
         BasicsStep(store: basicsStore)
       }
       .presentationDetents([.medium])
     }
     .sheet(
-      item: $store.scope(state: \.destination?.personalInfo, action: \.destination.personalInfo)
+      item: $store.scope(state: \.$destination, action: \.destination).personalInfo
     ) { personalStore in
       NavigationStack {
         PersonalInfoStep(store: personalStore)
@@ -423,14 +424,14 @@ private struct SummaryStep: View {
       .presentationDetents([.medium])
     }
     .sheet(
-      item: $store.scope(state: \.destination?.topics, action: \.destination.topics)
+      item: $store.scope(state: \.$destination, action: \.destination).topics
     ) { topicsStore in
       NavigationStack {
         TopicsStep(store: topicsStore)
       }
       .presentationDetents([.medium])
     }
-    .alert($store.scope(state: \.destination?.alert, action: \.destination.alert))
+    .alert($store.scope(state: \.$destination, action: \.destination).alert)
   }
 }
 
@@ -441,7 +442,7 @@ private struct SummaryStep: View {
 #Preview("Basics") {
   NavigationStack {
     BasicsStep(
-      store: Store(initialState: BasicsFeature.State(signUpData: Shared(SignUpData()))) {
+      store: Store(initialState: BasicsFeature.State(signUpData: Shared(value: SignUpData()))) {
         BasicsFeature()
       }
     )
@@ -451,7 +452,8 @@ private struct SummaryStep: View {
 #Preview("Personal info") {
   NavigationStack {
     PersonalInfoStep(
-      store: Store(initialState: PersonalInfoFeature.State(signUpData: Shared(SignUpData()))) {
+      store: Store(initialState: PersonalInfoFeature.State(signUpData: Shared(value: SignUpData())))
+      {
         PersonalInfoFeature()
       }
     )
@@ -461,7 +463,7 @@ private struct SummaryStep: View {
 #Preview("Topics") {
   NavigationStack {
     TopicsStep(
-      store: Store(initialState: TopicsFeature.State(topics: Shared([]))) {
+      store: Store(initialState: TopicsFeature.State(topics: Shared(value: []))) {
         TopicsFeature()
       }
     )
@@ -474,7 +476,7 @@ private struct SummaryStep: View {
       store: Store(
         initialState: SummaryFeature.State(
           signUpData: Shared(
-            SignUpData(
+            value: SignUpData(
               email: "blob@pointfree.co",
               firstName: "Blob",
               lastName: "McBlob",

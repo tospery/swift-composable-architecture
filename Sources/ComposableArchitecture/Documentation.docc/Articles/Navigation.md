@@ -21,7 +21,7 @@ use these tools.
 - <doc:TreeBasedNavigation>
 - ``Presents()``
 - ``PresentationAction``
-- ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at``
+- ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q``
 
 ### Stack-based navigation
 
@@ -30,7 +30,7 @@ use these tools.
 - ``StackAction``
 - ``StackActionOf``
 - ``StackElementID``
-- ``Reducer/forEach(_:action:destination:fileID:line:)-yz3v``
+- ``Reducer/forEach(_:action:destination:fileID:filePath:line:column:)-9svqb``
 
 ### Dismissal
 

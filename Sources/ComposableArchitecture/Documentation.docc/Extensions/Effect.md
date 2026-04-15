@@ -5,16 +5,15 @@
 ### Creating an effect
 
 - ``none``
-- ``run(priority:operation:catch:fileID:line:)``
+- ``run(priority:operation:catch:fileID:filePath:line:column:)``
 - ``send(_:)``
 - ``EffectOf``
-- ``TaskResult``
 
 ### Cancellation
 
 - ``cancellable(id:cancelInFlight:)``
 - ``cancel(id:)``
-- ``withTaskCancellation(id:cancelInFlight:operation:)``
+- ``ComposableArchitecture/withTaskCancellation(id:cancelInFlight:isolation:operation:)``
 - ``_Concurrency/Task/cancel(id:)``
 
 ### Composition
@@ -37,3 +36,7 @@
 - ``publisher(_:)``
 - ``debounce(id:for:scheduler:options:)``
 - ``throttle(id:for:scheduler:latest:)``
+
+### Deprecations
+
+- <doc:EffectDeprecations>

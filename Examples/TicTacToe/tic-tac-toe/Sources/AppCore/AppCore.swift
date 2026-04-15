@@ -2,7 +2,7 @@ import ComposableArchitecture
 import LoginCore
 import NewGameCore
 
-@Reducer(state: .equatable)
+@Reducer
 public enum TicTacToe {
   case login(Login)
   case newGame(NewGame)
@@ -14,7 +14,7 @@ public enum TicTacToe {
         state = .newGame(NewGame.State())
         return .none
 
-      case let .login(.loginResponse(.success(response))) where !response.twoFactorRequired:
+      case .login(.loginResponse(.success(let response))) where !response.twoFactorRequired:
         state = .newGame(NewGame.State())
         return .none
 
@@ -37,3 +37,4 @@ public enum TicTacToe {
     }
   }
 }
+extension TicTacToe.State: Equatable {}

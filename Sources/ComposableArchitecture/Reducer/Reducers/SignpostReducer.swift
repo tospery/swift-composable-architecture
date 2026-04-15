@@ -57,7 +57,7 @@ public struct _SignpostReducer<Base: Reducer>: Reducer {
   }
 
   @inlinable
-  public func reduce(
+  public func _reduce(
     into state: inout Base.State, action: Base.Action
   ) -> Effect<Base.Action> {
     var actionOutput: String!
@@ -65,7 +65,7 @@ public struct _SignpostReducer<Base: Reducer>: Reducer {
       actionOutput = debugCaseOutput(action)
       os_signpost(.begin, log: log, name: "Action", "%s%s", self.prefix, actionOutput)
     }
-    let effects = self.base.reduce(into: &state, action: action)
+    let effects = self.base._reduce(into: &state, action: action)
     if self.log.signpostsEnabled {
       os_signpost(.end, log: self.log, name: "Action")
       return
@@ -88,7 +88,7 @@ extension Effect {
     switch self.operation {
     case .none:
       return self
-    case let .publisher(publisher):
+    case .publisher(let publisher):
       return .init(
         operation: .publisher(
           publisher.handleEvents(
@@ -114,9 +114,9 @@ extension Effect {
           .eraseToAnyPublisher()
         )
       )
-    case let .run(priority, operation):
+    case .run(let name, let priority, let operation):
       return .init(
-        operation: .run(priority) { send in
+        operation: .run(name: name, priority: priority) { send in
           os_signpost(
             .begin, log: log, name: "Effect", signpostID: sid, "%sStarted from %s", prefix,
             actionOutput
@@ -166,7 +166,7 @@ func debugCaseOutput(
     }
   }
 
-  return (value as? CustomDebugStringConvertible)?.debugDescription
+  return (value as? any CustomDebugStringConvertible)?.debugDescription
     ?? "\(abbreviated ? "" : typeName(type(of: value)))\(debugCaseOutputHelp(value))"
 }
 

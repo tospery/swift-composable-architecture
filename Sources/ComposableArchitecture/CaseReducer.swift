@@ -7,11 +7,12 @@ where State: CaseReducerState, Body: Reducer, Body.State == State, Body.Action =
   associatedtype State = State
   associatedtype Action = Action
   associatedtype Body = Body
-  associatedtype CaseScope
+  associatedtype CaseScope: _CaseScopeProtocol
 
   @ReducerBuilder<State, Action>
   static var body: Body { get }
 
+  @preconcurrency @MainActor
   static func scope(_ store: Store<State, Action>) -> CaseScope
 }
 
@@ -21,13 +22,15 @@ extension CaseReducer {
   }
 }
 
+public protocol _CaseScopeProtocol {}
+
 /// A state type that is associated with a ``CaseReducer``.
 public protocol CaseReducerState {
   associatedtype StateReducer: CaseReducer where StateReducer.State == Self
 }
 
 extension Reducer {
-  /// A special overload of ``Reducer/ifLet(_:action:destination:fileID:line:)-4f2at`` for enum
+  /// A special overload of ``Reducer/ifLet(_:action:destination:fileID:filePath:line:column:)-4ub6q`` for enum
   /// reducers.
   public func ifLet<ChildState: CaseReducerState, ChildAction>(
     _ state: WritableKeyPath<State, PresentationState<ChildState>>,
@@ -38,7 +41,7 @@ extension Reducer {
     }
   }
 
-  /// A special overload of ``Reducer/forEach(_:action:destination:fileID:line:)-yz3v`` for enum
+  /// A special overload of ``Reducer/forEach(_:action:destination:fileID:filePath:line:column:)-9svqb`` for enum
   /// reducers.
   public func forEach<DestinationState: CaseReducerState, DestinationAction>(
     _ state: WritableKeyPath<State, StackState<DestinationState>>,
@@ -54,5 +57,47 @@ extension Store where State: CaseReducerState, State.StateReducer.Action == Acti
   /// A destructurable view of a store on a collection of cases.
   public var `case`: State.StateReducer.CaseScope {
     State.StateReducer.scope(self)
+  }
+}
+
+public protocol _StoreWithCaseScope {
+  associatedtype _CaseScope: CasePathable
+  var _caseScope: _CaseScope { get }
+}
+
+extension Store: @preconcurrency _StoreWithCaseScope
+where
+  State: CaseReducerState & ObservableState,
+  State.StateReducer.Action == Action,
+  State.StateReducer.CaseScope: CasePathable
+{
+  public var _caseScope: State.StateReducer.CaseScope { self.case }
+}
+
+public protocol _OptionalStoreWithCaseScope: ExpressibleByNilLiteral {
+  associatedtype _CaseScope: CasePathable
+  var _optionalCaseScope: _CaseScope? { get }
+}
+
+extension Optional: _OptionalStoreWithCaseScope where Wrapped: _StoreWithCaseScope {
+  public var _optionalCaseScope: Wrapped._CaseScope? {
+    self.flatMap { ($0 as any _StoreWithCaseScope)._caseScope as? _CaseScope }
+  }
+}
+
+extension _OptionalStoreWithCaseScope {
+  public subscript<Case>(
+    _caseScope keyPath: KeyPath<
+      _CaseScope.AllCasePaths, AnyCasePath<_CaseScope, Case>
+    >
+  ) -> Case? {
+    get {
+      _optionalCaseScope.flatMap {
+        _CaseScope.allCasePaths[keyPath: keyPath].extract(from: $0)
+      }
+    }
+    set {
+      if newValue == nil { self = nil }
+    }
   }
 }

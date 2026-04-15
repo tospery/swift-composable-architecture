@@ -53,14 +53,14 @@ struct Todos {
         state.todos.removeAll(where: \.isComplete)
         return .none
 
-      case let .delete(indexSet):
+      case .delete(let indexSet):
         let filteredTodos = state.filteredTodos
         for index in indexSet {
           state.todos.remove(id: filteredTodos[index].id)
         }
         return .none
 
-      case var .move(source, destination):
+      case .move(var source, var destination):
         if state.filter == .completed {
           source = IndexSet(
             source
@@ -140,7 +140,7 @@ struct AppView: View {
   }
 }
 
-extension IdentifiedArray where ID == Todo.State.ID, Element == Todo.State {
+extension IdentifiedArrayOf<Todo.State> {
   static let mock: Self = [
     Todo.State(
       description: "Check Mail",

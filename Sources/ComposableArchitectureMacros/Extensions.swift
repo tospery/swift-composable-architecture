@@ -42,7 +42,7 @@ extension VariableDeclSyntax {
   func accessorsMatching(_ predicate: (TokenKind) -> Bool) -> [AccessorDeclSyntax] {
     let accessors: [AccessorDeclListSyntax.Element] = bindings.compactMap { patternBinding in
       switch patternBinding.accessorBlock?.accessors {
-      case let .accessors(accessors):
+      case .accessors(let accessors):
         return accessors
       default:
         return nil
@@ -136,7 +136,7 @@ extension TypeSyntax {
         genericParameters[parameter.name.text] = parameter.inheritedType
       }
     }
-    var iterator = self.asProtocol(TypeSyntaxProtocol.self).tokens(viewMode: .sourceAccurate)
+    var iterator = self.asProtocol((any TypeSyntaxProtocol).self).tokens(viewMode: .sourceAccurate)
       .makeIterator()
     guard let base = iterator.next() else {
       return nil
@@ -282,5 +282,17 @@ extension DeclGroupSyntax {
 
   var isStruct: Bool {
     return self.is(StructDeclSyntax.self)
+  }
+}
+
+extension AttributedTypeSyntax {
+  var isInout: Bool {
+    #if canImport(SwiftSyntax600)
+      self.specifiers.contains(
+        where: { $0.as(SimpleTypeSpecifierSyntax.self)?.specifier.tokenKind == .keyword(.inout) }
+      ) == true
+    #else
+      self.specifier?.tokenKind == .keyword(.inout)
+    #endif
   }
 }

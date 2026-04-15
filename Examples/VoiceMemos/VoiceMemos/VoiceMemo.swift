@@ -22,7 +22,7 @@ struct VoiceMemo {
   }
 
   enum Action {
-    case audioPlayerClient(Result<Bool, Error>)
+    case audioPlayerClient(Result<Bool, any Error>)
     case delegate(Delegate)
     case playButtonTapped
     case timerUpdated(TimeInterval)
@@ -83,7 +83,7 @@ struct VoiceMemo {
           return .cancel(id: CancelID.play)
         }
 
-      case let .timerUpdated(time):
+      case .timerUpdated(let time):
         switch state.mode {
         case .notPlaying:
           break
@@ -92,7 +92,7 @@ struct VoiceMemo {
         }
         return .none
 
-      case let .titleTextFieldChanged(text):
+      case .titleTextFieldChanged(let text):
         state.title = text
         return .none
       }

@@ -1,11 +1,12 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import SyncUps
 
-final class RecordMeetingTests: XCTestCase {
-  @MainActor
-  func testTimerFinishes() async {
+@MainActor
+struct RecordMeetingTests {
+  @Test
+  func timerFinishes() async {
     let clock = TestClock()
     let syncUp = SyncUp(
       id: SyncUp.ID(),
@@ -17,7 +18,7 @@ final class RecordMeetingTests: XCTestCase {
       title: "Morning Sync"
     )
     let store = TestStore(
-      initialState: RecordMeeting.State(syncUp: Shared(syncUp))
+      initialState: RecordMeeting.State(syncUp: Shared(value: syncUp))
     ) {
       RecordMeeting()
     } withDependencies: {
@@ -29,6 +30,6 @@ final class RecordMeetingTests: XCTestCase {
     // ❌ The store received 1 unexpected action by the end of this test: …
     //
     //   Unhandled actions:
-    //     • .timerTick
+    //     .timerTick
   }
 }

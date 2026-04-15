@@ -17,7 +17,7 @@ struct SyncUpDetailView: View {
         ) {
           Label("Start Meeting", systemImage: "timer")
             .font(.headline)
-            .foregroundColor(.accentColor)
+            .foregroundStyle(Color.accentColor)
         }
         HStack {
           Label("Length", systemImage: "clock")
@@ -30,7 +30,7 @@ struct SyncUpDetailView: View {
           Spacer()
           Text(store.syncUp.theme.name)
             .padding(4)
-            .foregroundColor(store.syncUp.theme.accentColor)
+            .foregroundStyle(store.syncUp.theme.accentColor)
             .background(store.syncUp.theme.mainColor)
             .cornerRadius(4)
         }
@@ -65,10 +65,9 @@ struct SyncUpDetailView: View {
       }
 
       Section {
-        Button("Delete") {
+        Button("Delete", role: .destructive) {
           store.send(.deleteButtonTapped)
         }
-        .foregroundColor(.red)
         .frame(maxWidth: .infinity)
       }
     }
@@ -78,9 +77,9 @@ struct SyncUpDetailView: View {
         store.send(.editButtonTapped)
       }
     }
-    .alert($store.scope(state: \.destination?.alert, action: \.destination.alert))
+    .alert($store.scope(state: \.$destination, action: \.destination).alert)
     .sheet(
-      item: $store.scope(state: \.destination?.edit, action: \.destination.edit)
+      item: $store.scope(state: \.$destination, action: \.destination).edit
     ) { editSyncUpStore in
       NavigationStack {
         SyncUpFormView(store: editSyncUpStore)
@@ -107,17 +106,7 @@ struct SyncUpDetailView: View {
     SyncUpDetailView(
       store: Store(
         initialState: SyncUpDetail.State(
-          syncUp: Shared(
-            SyncUp(
-              id: SyncUp.ID(),
-              attendees: [
-                Attendee(id: Attendee.ID(), name: "Blob"),
-                Attendee(id: Attendee.ID(), name: "Blob Jr."),
-                Attendee(id: Attendee.ID(), name: "Blob Sr."),
-              ],
-              title: "Point-Free Morning Sync"
-            )
-          )
+          syncUp: Shared(value: .mock)
         )
       ) {
         SyncUpDetail()

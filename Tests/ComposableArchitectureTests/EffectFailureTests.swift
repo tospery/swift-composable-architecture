@@ -6,18 +6,19 @@
   final class EffectFailureTests: BaseTCATestCase {
     @MainActor
     func testRunUnexpectedThrows() async {
-      guard #available(iOS 15, macOS 12, tvOS 15, watchOS 8, *) else { return }
 
       var line: UInt!
       XCTExpectFailure {
-        $0.compactDescription == """
-          An "Effect.run" returned from "\(#fileID):\(line+1)" threw an unhandled error. …
+        $0.compactDescription.hasSuffix(
+          """
+          An "Effect.run" returned from "\(#fileID):\(line+1)" threw an unhandled error.
 
               EffectFailureTests.Unexpected()
 
           All non-cancellation errors must be explicitly handled via the "catch" parameter on \
           "Effect.run", or via a "do" block.
           """
+        )
       }
 
       line = #line

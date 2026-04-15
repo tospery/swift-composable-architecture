@@ -3,11 +3,10 @@ import ComposableArchitecture
 import XCTest
 
 final class EffectRunTests: BaseTCATestCase {
-  @MainActor
   func testRun() async {
     struct State: Equatable {}
     enum Action: Equatable { case tapped, response }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -21,11 +20,10 @@ final class EffectRunTests: BaseTCATestCase {
     await store.receive(.response)
   }
 
-  @MainActor
   func testRunCatch() async {
     struct State: Equatable {}
     enum Action: Equatable { case tapped, response }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -49,14 +47,16 @@ final class EffectRunTests: BaseTCATestCase {
     func testRunUnhandledFailure() async {
       var line: UInt!
       XCTExpectFailure(nil, enabled: nil, strict: nil) {
-        $0.compactDescription == """
-          An "Effect.run" returned from "\(#fileID):\(line+1)" threw an unhandled error. …
+        $0.compactDescription.hasSuffix(
+          """
+          An "Effect.run" returned from "\(#fileID):\(line+1)" threw an unhandled error.
 
               EffectRunTests.Failure()
 
           All non-cancellation errors must be explicitly handled via the "catch" parameter on \
           "Effect.run", or via a "do" block.
           """
+        )
       }
       struct State: Equatable {}
       enum Action: Equatable { case tapped, response }
@@ -75,16 +75,15 @@ final class EffectRunTests: BaseTCATestCase {
         }
       }
       // NB: We wait a long time here because XCTest failures take a long time to generate
-      await store.send(.tapped).finish(timeout: 5 * NSEC_PER_SEC)
+      await store.send(.tapped).finish(timeout: .seconds(5))
     }
   #endif
 
-  @MainActor
   func testRunCancellation() async {
     enum CancelID { case response }
     struct State: Equatable {}
     enum Action: Equatable { case tapped, response }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -102,12 +101,11 @@ final class EffectRunTests: BaseTCATestCase {
     await store.send(.tapped).finish()
   }
 
-  @MainActor
   func testRunCancellationCatch() async {
     enum CancelID { case responseA }
     struct State: Equatable {}
     enum Action: Equatable { case tapped, responseA, responseB }
-    let store = TestStore(initialState: State()) {
+    let store = await TestStore(initialState: State()) {
       Reduce<State, Action> { state, action in
         switch action {
         case .tapped:
@@ -128,10 +126,11 @@ final class EffectRunTests: BaseTCATestCase {
   }
 
   @MainActor
-  func testRunEscapeFailure() async {
+  func testRunEscapeFailure() async throws {
     XCTExpectFailure {
-      $0.compactDescription == """
-        An action was sent from a completed effect:
+      $0.compactDescription.hasSuffix(
+        """
+        An action was sent from a completed effect.
 
           Action:
             EffectRunTests.Action.response
@@ -145,6 +144,7 @@ final class EffectRunTests: BaseTCATestCase {
         To fix this, make sure that your 'run' closure does not return until you're done \
         calling 'send'.
         """
+      )
     }
 
     enum Action { case tap, response }
@@ -167,8 +167,9 @@ final class EffectRunTests: BaseTCATestCase {
       }
     }
 
-    let viewStore = ViewStore(store, observe: { $0 })
-    await viewStore.send(.tap).finish()
+    await store.send(.tap).finish()
     await queue.advance(by: .seconds(1))
+
+    try await Task.sleep(nanoseconds: 1_000_000_000)
   }
 }
